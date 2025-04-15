@@ -47,8 +47,31 @@ def verbing(s):
 # so [1, 2, 2, 3] returns [1, 2, 3]. You may create a new list or
 # modify the passed in list.
 def remove_adjacent(nums):
-# +++your code here+++
-    return
+    # Sorting to ensure that all equal numbers are next to each other
+    nums.sort()
+    # tmp variable to save previous element
+    prev = None
+    # Result list
+    adjNums = []
+    # Check if the list has elements
+    if len(nums) > 0:
+        # Iterate throuh elements of the list
+        for num in nums:
+            # If the result list is empty, the first item can always be pushed
+            if len(adjNums) == 0:
+                adjNums.append(num)
+            # Checking all other items excluding the first
+            else:
+                # Since we sorted the list, we can simply check if the current item is bigger than the previous
+                # If so, we can add the item to the result since it must be the first of its kind
+                # All other items may not be appended
+                if num > prev:
+                    adjNums.append(num)
+            prev = num
+    else:
+        # Catching emtpy List exception
+        return "Input list is empty"
+    return adjNums
 
 
 def main():
