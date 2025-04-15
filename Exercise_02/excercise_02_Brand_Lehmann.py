@@ -1,8 +1,7 @@
 # donuts
 # Given an integer count of a number of donuts, return a string
 # of the form 'Number of donuts: <count>', where <count> is the number
-# passed in. However, if the count is 10 or more, then use the word
-'many'
+# passed in. However, if the count is 10 or more, then use the word'many'
 # instead of the actual count.
 # So donuts(5) returns 'Number of donuts: 5'
 # and donuts(23) returns 'Number of donuts: many'
@@ -20,7 +19,18 @@ def donuts(count):
 # Return the resulting string.
 def verbing(s):
 # +++your code here+++
-    return
+    # Check if s is a string to avoid errors while concatinating strings and numbers
+    if isinstance(s, str):
+        # Check if s is longer than 2 characters
+        if len(s) > 2:
+            s = s.lower() # to lower to avoid mismatches due to case sensitivity
+            # When s ends with 'ing', 'ly' is added. This needs to be checked first 
+            if s.endswith('ing'):
+                s = s + 'ly'
+            # If s does not ends with 'ing', it needs to be added
+            else:
+                s = s + 'ing'
+    return s
 
 
 # Remove adjacent
