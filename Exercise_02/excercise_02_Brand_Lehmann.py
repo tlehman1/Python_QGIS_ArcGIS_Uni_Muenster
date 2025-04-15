@@ -6,8 +6,17 @@
 # So donuts(5) returns 'Number of donuts: 5'
 # and donuts(23) returns 'Number of donuts: many'
 def donuts(count):
-# +++ your code here +++
-    return
+    # check if the input is an Integer with isinstance()
+    if isinstance(count, int):
+        # if the number of donuts is 10 or larger it returns 'many'
+        if count >= 10:
+            return 'Number of donuts: many'
+        # if the number of donuts is under 10 it returns the actual number of donuts given
+        else:
+            return f'Number of donuts: {count}'
+    # when the input =! Integer, an error message is displayed
+    else:
+        return 'Give a valid Number'
 
 
 # verbing
@@ -18,7 +27,6 @@ def donuts(count):
 # If the string length is less than 3, leave it unchanged.
 # Return the resulting string.
 def verbing(s):
-# +++your code here+++
     # Check if s is a string to avoid errors while concatinating strings and numbers
     if isinstance(s, str):
         # Check if s is longer than 2 characters
