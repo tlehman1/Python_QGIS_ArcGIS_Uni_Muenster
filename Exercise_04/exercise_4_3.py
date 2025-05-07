@@ -4,15 +4,21 @@ from qgis.core import *
 
 import os
 
+# Initialize QGIS instance
+instPath = "C:/QGIS_3_40_5" # CHANGE THIS
+QgsApplication.setPrefixPath(instPath, True)
+qgs = QgsApplication([], False)
+qgs.initQgis()
+
 # Path to data and QGIS-project
-project_path = "Exercise_04\myFirstProject.qgz"  # for QGIS version 3+
+project_path = r"Exercise_04\myFirstProject.qgz"  # for QGIS version 3+
 
 # https://www.tutorialspoint.com/python/os_listdir.htm
 # Open a file
-path = "Exercise_04\muenster"
+path = r"Exercise_04\muenster"
 dirs = os.listdir( path )
 
-# initiate QGIS project
+# initiate QGIS
 project = QgsProject.instance()
 project.read(project_path)
 
