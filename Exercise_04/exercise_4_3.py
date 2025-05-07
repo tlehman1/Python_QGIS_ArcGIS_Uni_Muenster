@@ -7,9 +7,19 @@ from qgis.core import *
 #QgsApplication.setPrefixPath("/path/to/qgis/installation", True)
 
 # Path to data and QGIS-project
-layer_path = r"C:\Users\Sven Harpering\sciebo\GIS-GK\GIS-GK_WS_23_24\GIS Data\Flughafen Muenchen - Datenlieferung I\WKA_Buffer.shp"
-project_path = r"C:\Users\Sven Harpering\meine_zweite_karte.qgz"  # for QGIS version 3+
+layer_path = r"C:\Users\t.lehmann\iCloudDrive\Studium\Geoinformatik Master\5Electives (10 ECTS)\Python in QGIS and ArcGIS (5 ECTS)\Sample Scripts\Sample Scripts - Session 4 Data Muenster"
+project_path = r"C:\Users\t.lehmann\iCloudDrive\Studium\Geoinformatik Master\5Electives (10 ECTS)\Python in QGIS and ArcGIS (5 ECTS)\Sample Scripts\Sample Scripts - Session 4 QGIS.qgz"  # for QGIS version 3+
 
+# https://www.tutorialspoint.com/python/os_listdir.htm
+# Open a file
+path = "/home/TP"
+dirs = os.listdir( path )
+
+# Print all the files and directories
+for file in dirs:
+   print(file)
+
+os.listdir()
 # Create layer
 layer = QgsVectorLayer(layer_path, "WKA eingeladen", "ogr")
 
