@@ -14,8 +14,10 @@ path = 'C:/Users/t.lehmann/OneDrive - con terra/Desktop/'
 with open(path + 'SchoolsReport.csv', 'w') as csvfile:
     fileout = csv.writer(csvfile, delimiter=';')
     
+    # write first line in document
     fileout.writerow(['Name','X','Y'])
     
+    # select school features and write it to the .csv file
     for feature in features:
         schoolName = feature.attributes()[1]
         schoolGeom = feature.geometry()
