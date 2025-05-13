@@ -42,24 +42,24 @@ else:
                 # Get school name and type
                 school_name = school["Name"]
                 school_type = school["SchoolType"]
-                schools_in_district.append((school_name, school_type))
+                schools_in_district.append((school_name, school_type, school_geom))
                 schools_to_select.append(school.id())
         
         # Sort schools alphabetically
         schools_in_district.sort()
         
+        # Get centroid of district to compute distance
+        district_centroid = district_geom.centroid()
+
         # Prepare message for QMessageBox
         message = ""
-        for school_name, school_type in schools_in_district:
-            message += f"{school_name}, {school_type}\n"
+        for school_name, school_type, school_geom in schools_in_district:
+            # Calculate distance to center in km, rounded (no reprojection necessary, both datasets are in EPSG:25832)
+            dist_to_centroid = round(school_geom.distance(district_centroid) / 1000, 2)
+            # Building message string
+            message += f"{school_name}, {school_type}, Distance to center: {dist_to_centroid}km\n"
         
-        # Show information dialog with schools
-        if schools_in_district:
-            QMessageBox.information(parent, f"Schools in {sDistrict}", message)
-        else:
-            QMessageBox.information(parent, f"Schools in {sDistrict}", "No schools found in this district.")
-            
-        # Select schools in the map and zoom to them
+         # Select schools in the map and zoom to them
         if schools_to_select:
             # Select all schools in the district
             schools_layer.selectByIds(schools_to_select)
@@ -67,3 +67,10 @@ else:
             # Zoom to selected schools
             canvas = iface.mapCanvas()
             canvas.zoomToSelected(schools_layer)
+        
+        # Show information dialog with schools
+        if schools_in_district:
+            QMessageBox.information(parent, f"Schools in {sDistrict}", message)
+        else:
+            QMessageBox.information(parent, f"Schools in {sDistrict}", "No schools found in this district.")
+            
