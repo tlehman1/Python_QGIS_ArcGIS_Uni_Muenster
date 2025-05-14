@@ -57,7 +57,7 @@ else:
             # Calculate distance to center in km, rounded (no reprojection necessary, both datasets are in EPSG:25832)
             dist_to_centroid = round(school_geom.distance(district_centroid) / 1000, 2)
             # Building message string
-            message += f"{school_name}, {school_type}, Distance to center: {dist_to_centroid}km\n"
+            message += f"{school_name}, {school_type}, Distance to center: {dist_to_centroid}km\n\n"
         
          # Select schools in the map and zoom to them
         if schools_to_select:
