@@ -11,7 +11,7 @@ wgs_crs = QgsCoordinateReferenceSystem(4326)
 etrs_crs = QgsCoordinateReferenceSystem(25832)
 
 # Handling cancelation of process
-if bOk == False:
+if bOK == False:
     QMessageBox.warning(parent, "Error", "User cancelled")
 else:
     # Splitting coordinate string at the comma to get 2 coordinates
