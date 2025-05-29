@@ -22,38 +22,38 @@ from qgis.core import (QgsProcessing,
                        QgsProject,
                        QgsFeatureRequest,
                        QgsMessageLog,
+                       QgsVectorLayer,
                        Qgis)
 from qgis import processing
 from qgis.utils import iface
 import time
+import os
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.units import inch
+
+# Import matplotlib for charts
+try:
+    import matplotlib.pyplot as plt
+    MATPLOTLIB_AVAILABLE = True
+except ImportError:
+    MATPLOTLIB_AVAILABLE = False
 
 
 class createCityDistrictProfile(QgsProcessingAlgorithm):
     """
-    This is an example algorithm that takes a vector layer and
-    creates a new identical one.
-
-    It is meant to be used as an example of how to create your own
-    algorithms and explain methods and variables used to do it. An
-    algorithm like this will be available in all elements, and there
-    is not need for additional work.
-
-    All Processing algorithms should extend the QgsProcessingAlgorithm
-    class.
+    This algorithm creates a PDF profile for a selected city district
+    with various statistics and a map image.
     """
 
-    # Constants used to refer to parameters and outputs. They will be
-    # used when calling the algorithm from another algorithm, or when
-    # calling from the QGIS console.
-
+    # Constants used to refer to parameters and outputs
     INPUT = 'INPUT'
     OUTPUT = 'OUTPUT'
-    pdf_output = 'PDF_OUTPUT'
-    cityDistrict = 'cityDistricts'
-    schoolOrSwim = 'schoolOrSwim'
-    orderedList = []
+    PDF_OUTPUT = 'PDF_OUTPUT'
+    CITY_DISTRICT = 'CITY_DISTRICT'
+    SCHOOL_OR_SWIM = 'SCHOOL_OR_SWIM'
 
     def tr(self, string):
         """
@@ -66,247 +66,406 @@ class createCityDistrictProfile(QgsProcessingAlgorithm):
 
     def name(self):
         """
-        Returns the algorithm name, used for identifying the algorithm. This
-        string should be fixed for the algorithm, and must not be localised.
-        The name should be unique within each provider. Names should contain
-        lowercase alphanumeric characters only and no spaces or other
-        formatting characters.
+        Returns the algorithm name, used for identifying the algorithm.
         """
-        return 'createCityDistrictProfile'
+        return 'createcitydistrictprofile'
 
     def displayName(self):
         """
-        Returns the translated algorithm name, which should be used for any
-        user-visible display of the algorithm name.
+        Returns the translated algorithm name.
         """
         return self.tr('Create City District Profile')
 
     def group(self):
         """
-        Returns the name of the group this algorithm belongs to. This string
-        should be localised.
+        Returns the name of the group this algorithm belongs to.
         """
         return self.tr('Exercise scripts')
 
     def groupId(self):
         """
-        Returns the unique ID of the group this algorithm belongs to. This
-        string should be fixed for the algorithm, and must not be localised.
-        The group id should be unique within each provider. Group id should
-        contain lowercase alphanumeric characters only and no spaces or other
-        formatting characters.
+        Returns the unique ID of the group this algorithm belongs to.
         """
-        return 'createCityDistrictProfile'
+        return 'exercisescripts'
 
     def shortHelpString(self):
         """
-        Returns a localised short helper string for the algorithm. This string
-        should provide a basic description about what the algorithm does and the
-        parameters and outputs associated with it..
+        Returns a localised short helper string for the algorithm.
         """
-        return self.tr("Creates a City District profile and saves it in a pdf file")
+        return self.tr("Creates a City District profile and saves it in a PDF file")
         
     def createCityDistrictList(self):
-
+        """
+        Creates an alphabetically sorted list of city district names.
+        """
         # Get the layer containing city districts
         districtLayers = QgsProject.instance().mapLayersByName("Muenster_City_Districts")
+        if not districtLayers:
+            return []
+            
         districtLayer = districtLayers[0]
         
         # Create a QgsFeatureRequest instance to order by "Name"
         request = QgsFeatureRequest()
 
-        # Definde clause
-        nameClause = QgsFeatureRequest.OrderByClause("Name", ascending = True)
+        # Define clause
+        nameClause = QgsFeatureRequest.OrderByClause("Name", ascending=True)
 
         # Set clause
         orderby = QgsFeatureRequest.OrderBy([nameClause])
 
-        # assign orderby to the request
+        # Assign orderby to the request
         request.setOrderBy(orderby)
 
-        # create list for the distric names
+        # Create list for the district names
+        orderedList = []
 
-        # save features ordered by attribute "Name"
+        # Save features ordered by attribute "Name"
         for feature in districtLayer.getFeatures(request):
-            self.orderedList.append(feature["Name"])
+            orderedList.append(feature["Name"])
         
-        
+        return orderedList
 
     def initAlgorithm(self, config=None):
-
+        """
+        Define the inputs and output of the algorithm.
+        """
+        # Get the sorted list of city districts
+        district_list = self.createCityDistrictList()
+        
         # Add a parameter for selecting a city district
-        self.createCityDistrictList()
         self.addParameter(
             QgsProcessingParameterEnum(
-                self.cityDistrict, 'Select a City District', options=self.orderedList
+                self.CITY_DISTRICT, 
+                self.tr('Select a City District'), 
+                options=district_list,
+                defaultValue=0
             )
         )
 
         # Add a parameter for selecting between schools and swimming pools
         self.addParameter(
             QgsProcessingParameterEnum(
-                self.schoolOrSwim, 'Select schools or swimming pools', options=['Schools', 'Public swimming pools'], defaultValue = 'Schools'
+                self.SCHOOL_OR_SWIM, 
+                self.tr('Select schools or swimming pools'), 
+                options=['Schools', 'Public swimming pools'], 
+                defaultValue=0
             )
         )
 
         # Add a parameter for the output PDF file
         self.addParameter(
             QgsProcessingParameterFileDestination(
-                'PDF_OUTPUT',
+                self.PDF_OUTPUT,
                 self.tr('Output PDF file'),
                 fileFilter='PDF files (*.pdf)'
             )
-        ) 
+        )
+
+    def getSelectedDistrictFeature(self, district_name):
+        """
+        Get the feature for the selected district.
+        """
+        districtLayers = QgsProject.instance().mapLayersByName("Muenster_City_Districts")
+        if not districtLayers:
+            return None
+            
+        districtLayer = districtLayers[0]
+        
+        # Find the district feature by name
+        for feature in districtLayer.getFeatures():
+            if feature["Name"] == district_name:
+                return feature
+        
+        return None
     
     def districtInformation(self, parameters, context, feedback):
-        
+        """
+        Gather all information about the selected district.
+        """
         parameterList = []
 
-        # Get the selected city district and option (school or pool)
-        cityParameter = self.parameterAsString(
+        # Get the selected city district index and option
+        cityParameterIndex = self.parameterAsEnum(
             parameters,
-            self.cityDistrict,
+            self.CITY_DISTRICT,
             context
         )
         
-        schoolOrSwimParameter = self.parameterAsString(
+        schoolOrSwimParameter = self.parameterAsEnum(
             parameters,
-            self.schoolOrSwim,
+            self.SCHOOL_OR_SWIM,
             context
         )
         
-        cityDistrictName = self.orderedList[int(cityParameter)]
-
-        # Get the layer containing city districts
-        districtLayers = QgsProject.instance().mapLayersByName("Muenster_City_Districts")
-        districtLayer = districtLayers[0]
-
-         # Iterate through features in the district layer
-        features = districtLayer.getFeatures()     
-        for feature in features:
-            if feature.attributes()[3] == cityDistrictName:
-                
-                # Name of the city district
-                parameterList.append(cityDistrictName)
-                
-                #Name of the parent district
-                parameterList.append(feature.attributes()[4])
-
-                # Size of the area
-                geometry = feature.geometry()
-                geometryArea = geometry.area()
-                parameterList.append(round(geometryArea, 2))
-                
-                # Number of households in the district
-                house_numbers = QgsProject.instance().mapLayersByName("House_Numbers")
-                house_number = house_numbers[0]
-                house_features = house_number.getFeatures()
-                
-                houseCounter = 0
-                for house in house_features:
-                    houseGeometry = house.geometry()
-                    if geometry.contains(houseGeometry):
-                        houseCounter = houseCounter + 1
-                parameterList.append(houseCounter)
-                
-                # Number of parcels in the district
-                parcels = QgsProject.instance().mapLayersByName("Muenster_Parcels")
-                parcel = parcels[0]
-                parcel_features = parcel.getFeatures()
-                
-                parcelCounter = 0
-                for p in parcel_features:
-                    parcelGeometry = p.geometry()
-                    if geometry.intersects(parcelGeometry):
-                        parcelCounter = parcelCounter + 1
-                parameterList.append(parcelCounter)
-              
-                # Number of schools or pools in the district
-                if int(schoolOrSwimParameter) == 0: # School
-                    schools = QgsProject.instance().mapLayersByName("Schools")
-                    school = schools[0]
-                    school_features = school.getFeatures()
-                    
-                    schoolCounter = 0
-                    for s in school_features:
-                        schoolGeometry = s.geometry()
-                        if geometry.contains(schoolGeometry):
-                            schoolCounter = schoolCounter + 1 
-                    parameterList.append(schoolCounter)
-                
-                else: # Swimming Pool
-                    pools = QgsProject.instance().mapLayersByName("public_swimming_pools")
-                    pool = pools[0]
-                    pool_features = pool.getFeatures()
-                
-                    poolCounter = 0
-                    for sp in pool_features:
-                        poolGeometry = sp.geometry()
-                        if geometry.contains(poolGeometry):
-                            poolCounter = poolCounter + 1
-                    parameterList.append(poolCounter) 
-
-                # Adjust map view and save a snapshot
-                iface.mapCanvas().setExtent(feature.geometry().boundingBox())
-                iface.mapCanvas().refresh()
-                time.sleep(5)
-                picturePath = 'C:/Users/lucah/OneDrive/Desktop/feature321.png'
-                iface.mapCanvas().saveAsImage(picturePath)
-                
-                # return parameters
-                return parameterList, schoolOrSwimParameter, picturePath
+        # Get the district name from the list
+        district_list = self.createCityDistrictList()
+        if cityParameterIndex >= len(district_list):
+            feedback.reportError("Invalid district selection")
+            return None, None, None
+            
+        cityDistrictName = district_list[cityParameterIndex]
         
+        # Get the district feature
+        district_feature = self.getSelectedDistrictFeature(cityDistrictName)
+        if not district_feature:
+            feedback.reportError(f"District '{cityDistrictName}' not found")
+            return None, None, None
+
+        # Name of the city district
+        parameterList.append(cityDistrictName)
+        
+        # Name of the parent district
+        parameterList.append(district_feature["P_District"])
+
+        # Size of the area (calculate using geometry)
+        geometry = district_feature.geometry()
+        geometryArea = geometry.area()
+        parameterList.append(round(geometryArea, 2))
+        
+        # Number of households in the district
+        house_numbers = QgsProject.instance().mapLayersByName("House_Numbers")
+        if house_numbers:
+            house_number = house_numbers[0]
+            house_features = house_number.getFeatures()
+            
+            houseCounter = 0
+            for house in house_features:
+                houseGeometry = house.geometry()
+                if geometry.contains(houseGeometry):
+                    houseCounter += 1
+            parameterList.append(houseCounter)
+        else:
+            parameterList.append(0)
+        
+        # Number of parcels in the district
+        parcels = QgsProject.instance().mapLayersByName("Muenster_Parcels")
+        if parcels:
+            parcel = parcels[0]
+            parcel_features = parcel.getFeatures()
+            
+            parcelCounter = 0
+            for p in parcel_features:
+                parcelGeometry = p.geometry()
+                if geometry.intersects(parcelGeometry):
+                    parcelCounter += 1
+            parameterList.append(parcelCounter)
+        else:
+            parameterList.append(0)
+      
+        # Number of schools or pools in the district
+        if schoolOrSwimParameter == 0:  # Schools
+            schools = QgsProject.instance().mapLayersByName("Schools")
+            if schools:
+                school = schools[0]
+                school_features = school.getFeatures()
+                
+                schoolCounter = 0
+                for s in school_features:
+                    schoolGeometry = s.geometry()
+                    if geometry.contains(schoolGeometry):
+                        schoolCounter += 1 
+                parameterList.append(schoolCounter)
+            else:
+                parameterList.append(0)
+        
+        else:  # Swimming Pools
+            pools = QgsProject.instance().mapLayersByName("public_swimming_pools")
+            if pools:
+                pool = pools[0]
+                pool_features = pool.getFeatures()
+            
+                poolCounter = 0
+                for sp in pool_features:
+                    poolGeometry = sp.geometry()
+                    if geometry.contains(poolGeometry):
+                        poolCounter += 1
+                parameterList.append(poolCounter)
+            else:
+                parameterList.append(0)
+
+        # Adjust map view and save a snapshot
+        iface.mapCanvas().setExtent(district_feature.geometry().boundingBox())
+        iface.mapCanvas().refresh()
+        time.sleep(5)
+        
+        # Save image in project directory
+        project_path = QgsProject.instance().homePath()
+        if project_path:
+            picturePath = os.path.join(project_path, 'district_map.png')
+        else:
+            # Fallback to temp directory
+            import tempfile
+            picturePath = os.path.join(tempfile.gettempdir(), 'district_map.png')
+            
+        iface.mapCanvas().saveAsImage(picturePath)
+        
+        # Return parameters
+        return parameterList, schoolOrSwimParameter, picturePath
+
+    def createChart(self, district_name, schoolOrSwimParameter):
+        """
+        Create a chart showing the distribution of pool or school types.
+        """
+        if not MATPLOTLIB_AVAILABLE:
+            return None
+            
+        district_feature = self.getSelectedDistrictFeature(district_name)
+        if not district_feature:
+            return None
+            
+        geometry = district_feature.geometry()
+        type_count = {}
+        
+        if schoolOrSwimParameter == 0:  # Schools
+            schools = QgsProject.instance().mapLayersByName("Schools")
+            if schools:
+                layer = schools[0]
+                field_name = "SchoolType"
+                title = "School Types Distribution"
+            else:
+                return None
+        else:  # Pools
+            pools = QgsProject.instance().mapLayersByName("public_swimming_pools")
+            if pools:
+                layer = pools[0]
+                field_name = "Type"
+                title = "Pool Types Distribution"
+            else:
+                return None
+        
+        # Count feature types
+        for feature in layer.getFeatures():
+            if geometry.contains(feature.geometry()):
+                attr_value = feature[field_name]
+                if attr_value:
+                    if attr_value in type_count:
+                        type_count[attr_value] += 1
+                    else:
+                        type_count[attr_value] = 1
+        
+        if not type_count:
+            return None
+            
+        # Create chart
+        fig, ax = plt.subplots(figsize=(8, 6))
+        types = list(type_count.keys())
+        counts = list(type_count.values())
+        
+        ax.bar(types, counts, color='steelblue')
+        ax.set_xlabel('Types')
+        ax.set_ylabel('Count')
+        ax.set_title(title)
+        plt.xticks(rotation=45, ha='right')
+        plt.tight_layout()
+        
+        # Save chart
+        project_path = QgsProject.instance().homePath()
+        if project_path:
+            chart_path = os.path.join(project_path, 'type_distribution.png')
+        else:
+            import tempfile
+            chart_path = os.path.join(tempfile.gettempdir(), 'type_distribution.png')
+            
+        plt.savefig(chart_path)
+        plt.close()
+        
+        return chart_path
         
     def createPDF(self, pdf_output, parameters, context, feedback):
+        """
+        Create the PDF report with all gathered information.
+        """
         parameterList, schoolOrSwimParameter, picturePath = self.districtInformation(parameters, context, feedback)
+        
+        if parameterList is None:
+            return False
 
         # Create PDF with ReportLab
         c = canvas.Canvas(pdf_output, pagesize=letter)
+        width, height = letter
+        
+        # Title
+        c.setFont("Helvetica-Bold", 16)
+        c.drawCentredString(width/2, height - 50, f"City District Profile: {parameterList[0]}")
+        
+        # District information
         c.setFont("Helvetica", 12)
-
-        # Add district information to the PDF
-        textDistrictName = "Name of the City District: " + parameterList[0]
-        c.drawString(200, 750, textDistrictName)
-        textPDistrictName = "Name of the Parent District: " + parameterList[1]
-        c.drawString(200, 735, textPDistrictName)
-        textAreaSize = "Size of the area of the district: " + str(parameterList[2]) + "m²"
-        c.drawString(200, 720, textAreaSize)
-        textNumberHouses = "Number of households of the district: " + str(parameterList[3])
-        c.drawString(200, 705, textNumberHouses)
-        textNumberParcels = "Number of parcels of the district: " + str(parameterList[4])
-        c.drawString(200, 690, textNumberParcels)
-
-        # Add school or pool information to the PDF
-        if int(schoolOrSwimParameter) == 0:
+        y_position = height - 100
+        line_height = 20
+        
+        # Parent District
+        c.drawString(100, y_position, f"Parent District: {parameterList[1]}")
+        y_position -= line_height
+        
+        # Area size
+        c.drawString(100, y_position, f"Area Size: {parameterList[2]:,.2f} m²")
+        y_position -= line_height
+        
+        # Number of households
+        c.drawString(100, y_position, f"Number of Households: {parameterList[3]}")
+        y_position -= line_height
+        
+        # Number of parcels
+        c.drawString(100, y_position, f"Number of Parcels: {parameterList[4]}")
+        y_position -= line_height
+        
+        # Schools or pools information
+        if schoolOrSwimParameter == 0:
             if parameterList[5] == 0:
-                textNumberSchools = "No schools in this district"
-                c.drawString(200, 675, textNumberSchools)
+                text = "No schools in this district"
             else:
-                textNumberSchools = "Number of schools: " + str(parameterList[5])
-                c.drawString(200, 675, textNumberSchools)
+                text = f"Number of Schools: {parameterList[5]}"
         else:
             if parameterList[5] == 0:
-                textNumberSchools = "No public swimming pools in this district"
-                c.drawString(200, 675, textNumberSchools)
+                text = "No public swimming pools in this district"
             else:
-                textNumberPools = "Number of public swimming pools: " + str(parameterList[5])
-                c.drawString(200, 675, textNumberPools)
-
-        # Add map snapshot to the PDF
-        x = 100
-        y = 300
-        width = 400
-        height = 300
-        c.drawImage(picturePath, x, y, width, height)
-
+                text = f"Number of Public Swimming Pools: {parameterList[5]}"
+        
+        c.drawString(100, y_position, text)
+        y_position -= line_height * 2
+        
+        # Add map image
+        if os.path.exists(picturePath):
+            c.drawString(100, y_position, "Map:")
+            y_position -= 10
+            c.drawImage(picturePath, 100, y_position - 300, width=400, height=300)
+            y_position -= 320
+        
+        # Add chart for schools/pools if available
+        if MATPLOTLIB_AVAILABLE and parameterList[5] > 0:
+            district_list = self.createCityDistrictList()
+            cityParameterIndex = self.parameterAsEnum(parameters, self.CITY_DISTRICT, context)
+            district_name = district_list[cityParameterIndex]
+            
+            chart_path = self.createChart(district_name, schoolOrSwimParameter)
+            if chart_path and os.path.exists(chart_path):
+                # Start new page if needed
+                if y_position < 350:
+                    c.showPage()
+                    y_position = height - 50
+                    c.setFont("Helvetica", 12)
+                
+                c.drawString(100, y_position, "Type Distribution:")
+                y_position -= 10
+                c.drawImage(chart_path, 100, y_position - 250, width=350, height=250)
+        
         # Save the PDF
         c.save()
+        
+        feedback.pushInfo(f"PDF created successfully: {pdf_output}")
+        return True
     
     def processAlgorithm(self, parameters, context, feedback):
         """
-        Here is where the processing itself takes place.
+        Main processing method.
         """
+        pdf_output = self.parameterAsFileOutput(parameters, self.PDF_OUTPUT, context)
         
-        pdf_output = self.parameterAsFileOutput(parameters, 'PDF_OUTPUT', context)
+        # Create the PDF
+        success = self.createPDF(pdf_output, parameters, context, feedback)
         
-        self.createPDF(pdf_output, parameters, context, feedback)
+        if success:
+            return {self.PDF_OUTPUT: pdf_output}
+        else:
+            raise QgsProcessingException("Failed to create PDF")
