@@ -55,7 +55,7 @@ class createCityDistrictProfile(QgsProcessingAlgorithm):
     PDF_OUTPUT = 'PDF_OUTPUT'
     CITY_DISTRICT = 'CITY_DISTRICT'
     SCHOOL_OR_SWIM = 'SCHOOL_OR_SWIM'
-    QGIS_CACHE_PATH = r"C:\Users\kgttbran\AppData\Local\QGIS\QGIS3\cache"
+    QGIS_CACHE_PATH = r"C:\Users\<USERNAME>\AppData\Local\QGIS\QGIS3\cache" # !!!! This needs to be Changed !!!
 
     def tr(self, string):
         """
@@ -287,8 +287,10 @@ class createCityDistrictProfile(QgsProcessingAlgorithm):
                 parameterList.append(0)
 
         # clear caches
+        if "<USERNAME>" in self.QGIS_CACHE_PATH:
+            raise QgsProcessingException("Please provide a valid QGIS cache path!")
         try:
-            rmtree(self.QGIS_CACHE_PATH, ignore_errors=True)
+            rmtree(self.QGIS_CACHE_PATH)
         except:
             feedback.reportError("QGIS Caches could not be cleared. This might lead to unexpected behaviour. Please consider clearing your cache manually. Continue processing without cleared caches.")
         iface.mapCanvas().clearCache()
