@@ -33,6 +33,7 @@ from reportlab.pdfgen import canvas
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import inch
+from shutil import rmtree
 
 # Import matplotlib for charts
 try:
@@ -54,6 +55,7 @@ class createCityDistrictProfile(QgsProcessingAlgorithm):
     PDF_OUTPUT = 'PDF_OUTPUT'
     CITY_DISTRICT = 'CITY_DISTRICT'
     SCHOOL_OR_SWIM = 'SCHOOL_OR_SWIM'
+    QGIS_CACHE_PATH = r"C:\Users\kgttbran\AppData\Local\QGIS\QGIS3\cache"
 
     def tr(self, string):
         """
@@ -284,9 +286,18 @@ class createCityDistrictProfile(QgsProcessingAlgorithm):
             else:
                 parameterList.append(0)
 
+        # clear caches
+        try:
+            rmtree(self.QGIS_CACHE_PATH, ignore_errors=True)
+        except:
+            feedback.reportError("QGIS Caches could not be cleared. This might lead to unexpected behaviour. Please consider clearing your cache manually. Continue processing without cleared caches.")
+        iface.mapCanvas().clearCache()
+        iface.mapCanvas().clearExtentHistory()
+
         # Adjust map view and save a snapshot
         iface.mapCanvas().setExtent(district_feature.geometry().boundingBox())
-        iface.mapCanvas().refresh()
+        iface.mapCanvas().refreshAllLayers()
+        iface.mapCanvas().redrawAllLayers()
         time.sleep(5)
         
         # Save image in project directory
