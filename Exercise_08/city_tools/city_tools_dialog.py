@@ -26,6 +26,8 @@ import os
 
 from qgis.PyQt import uic
 from qgis.PyQt import QtWidgets
+from .city_tools_dialog_export import Ui_exportDialog
+from .city_tools_dialog_query import Ui_queryDialog
 
 # This loads your .ui file so that PyQt can populate your plugin with the elements from Qt Designer
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
@@ -42,3 +44,18 @@ class muensterCityDistrictToolsDialog(QtWidgets.QDialog, FORM_CLASS):
         # http://qt-project.org/doc/qt-4.8/designer-using-a-ui-file.html
         # #widgets-and-dialogs-with-auto-connect
         self.setupUi(self)
+        self.export_data.clicked.connect(self.openExportDialog)
+        self.query_data.clicked.connect(self.openQueryDialog)
+
+    def openExportDialog(self):
+        exportDialog = QtWidgets.QDialog()
+        ui = Ui_exportDialog()
+        ui.setupUi(exportDialog)
+        exportDialog.exec_()
+    
+    def openQueryDialog(self):
+        queryDialog = QtWidgets.QDialog()
+        ui = Ui_queryDialog()
+        ui.setupUi(queryDialog)
+        queryDialog.exec_()
+
