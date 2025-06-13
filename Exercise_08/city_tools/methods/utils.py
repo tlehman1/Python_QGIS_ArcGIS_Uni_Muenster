@@ -345,54 +345,229 @@ class createCityDistrictProfile(QgsProcessingAlgorithm):
             raise QgsProcessingException("Failed to create PDF")
     
     def create_pdf_profile(self, feature, output_path):
-        """Create PDF profile for a single feature"""
+        """Create PDF profile for a single feature with map image"""
         try:
-            from reportlab.lib.pagesizes import letter
-            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-            from reportlab.lib.styles import getSampleStyleSheet
-            from qgis.core import QgsProject
+            from reportlab.lib.pagesizes import letter, A4
+            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib.units import inch
+            
+            print(f"Creating PDF for district: {feature.attributes()}")
             
             # Create PDF document
-            doc = SimpleDocTemplate(output_path, pagesize=letter)
+            doc = SimpleDocTemplate(output_path, pagesize=A4, 
+                              leftMargin=72, rightMargin=72, 
+                              topMargin=72, bottomMargin=72)
             styles = getSampleStyleSheet()
             story = []
-
+            
+            # Custom styles
+            title_style = ParagraphStyle(
+                'CustomTitle',
+                parent=styles['Heading1'],
+                fontSize=18,
+                spaceAfter=20,
+                alignment=1  # Center
+            )
+            
+            info_style = ParagraphStyle(
+                'InfoStyle',
+                parent=styles['Normal'],
+                fontSize=12,
+                spaceAfter=8
+            )
             
             # Get feature data
-            district_name = feature['Name'] if 'Name' in feature.fields().names() else "Unknown"
-            parent_district = feature['P_District'] if 'P_District' in feature.fields().names() else "Unknown"
-            area = feature.geometry().area() / 1000000  # km²
-
+            district_name = "Unknown"
+            parent_district = "Unknown"
+            
+            try:
+                if 'Name' in feature.fields().names():
+                    district_name = str(feature['Name'])
+                if 'P_District' in feature.fields().names():
+                    parent_district = str(feature['P_District'])
+            except Exception as e:
+                print(f"Error getting field data: {e}")
+            
+            # Calculate area
+            try:
+                area = feature.geometry().area() / 1000000  # km²
+            except Exception as e:
+                print(f"Error calculating area: {e}")
+                area = 0
+            
             # Count features
+            print("Counting features...")
             households = self.count_features_in_district("House_Numbers", feature)
             parcels = self.count_features_in_district("Muenster_Parcels", feature)
             schools = self.count_features_in_district("Schools", feature)
             pools = self.count_features_in_district("public_swimming_pools", feature)
             
-            # Build PDF content
-            story.append(Paragraph(f"City District Profile: {district_name}", styles['Title']))
-            story.append(Spacer(1, 12))
+            print(f"Counts - Households: {households}, Parcels: {parcels}, Schools: {schools}, Pools: {pools}")
             
-            story.append(Paragraph(f"<b>Parent District:</b> {parent_district}", styles['Normal']))
-            story.append(Paragraph(f"<b>Area:</b> {area:.2f} km²", styles['Normal']))
-            story.append(Paragraph(f"<b>Number of Households:</b> {households}", styles['Normal']))
-            story.append(Paragraph(f"<b>Number of Parcels:</b> {parcels}", styles['Normal']))
-            story.append(Paragraph(f"<b>Number of Schools:</b> {schools}", styles['Normal']))
-            story.append(Paragraph(f"<b>Number of Swimming Pools:</b> {pools}", styles['Normal']))
+            # Build PDF content
+            story.append(Paragraph(f"City District Profile: {district_name}", title_style))
+            story.append(Spacer(1, 30))
+            
+            # Try to create map image
+            print("Creating map image...")
+            map_created = False
+            try:
+                map_image_path = self.create_district_map_simple(feature, district_name)
+                if map_image_path:
+                    print(f"Map image created: {map_image_path}")
+                    # Check if file exists and has reasonable size
+                    import os
+                    if os.path.exists(map_image_path) and os.path.getsize(map_image_path) > 1000:
+                        img = Image(map_image_path, width=5*inch, height=3.5*inch)
+                        story.append(img)
+                        story.append(Spacer(1, 20))
+                        map_created = True
+                        print("Map image added to PDF")
+                    else:
+                        print("Map file too small or doesn't exist")
+                else:
+                    print("Map image path is None")
+            except Exception as e:
+                print(f"Error creating/adding map: {e}")
+            
+            if not map_created:
+                story.append(Paragraph("<i>Map image could not be generated</i>", styles['Italic']))
+                story.append(Spacer(1, 20))
+            
+            # Add district information
+            story.append(Paragraph(f"<b>District Name:</b> {district_name}", info_style))
+            story.append(Paragraph(f"<b>Parent District:</b> {parent_district}", info_style))
+            story.append(Paragraph(f"<b>Area:</b> {area:.2f} km²", info_style))
+            story.append(Spacer(1, 10))
+            
+            story.append(Paragraph("<b>Statistics:</b>", styles['Heading2']))
+            story.append(Paragraph(f"• Number of Households: {households}", info_style))
+            story.append(Paragraph(f"• Number of Parcels: {parcels}", info_style))
+            story.append(Paragraph(f"• Number of Schools: {schools}", info_style))
+            story.append(Paragraph(f"• Number of Swimming Pools: {pools}", info_style))
             
             # Build PDF
+            print("Building PDF...")
             doc.build(story)
-            return True
+            print(f"PDF created successfully: {output_path}")
             
+            # Clean up temporary map image
+            try:
+                if 'map_image_path' in locals() and map_image_path:
+                    import os
+                    if os.path.exists(map_image_path):
+                        os.remove(map_image_path)
+                        print("Temporary map file cleaned up")
+            except Exception as e:
+                print(f"Error cleaning up temp file: {e}")
+            
+            return True
+        
         except Exception as e:
             print(f"Error creating PDF: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return False
+
+    def create_district_map_simple(self, feature, district_name):
+        """Create a simple map image using canvas screenshot"""
+        try:
+            print("Starting map creation...")
+            from qgis.utils import iface
+            from qgis.core import QgsRectangle
+            from qgis.PyQt.QtCore import QCoreApplication, QTimer
+            import tempfile
+            import os
+            import time
+            
+            # Get the map canvas
+            canvas = iface.mapCanvas()
+            print("Got canvas")
+            
+            # Get district geometry and extent
+            district_geometry = feature.geometry()
+            district_extent = district_geometry.boundingBox()
+            print(f"District extent: {district_extent}")
+            
+            # Add buffer around the district
+            buffer_x = district_extent.width() * 0.3
+            buffer_y = district_extent.height() * 0.3
+            buffered_extent = QgsRectangle(
+                district_extent.xMinimum() - buffer_x,
+                district_extent.yMinimum() - buffer_y,
+                district_extent.xMaximum() + buffer_x,
+                district_extent.yMaximum() + buffer_y
+            )
+            print(f"Buffered extent: {buffered_extent}")
+            
+            # Store current extent
+            original_extent = canvas.extent()
+            print("Stored original extent")
+            
+            # Set canvas to district extent
+            canvas.setExtent(buffered_extent)
+            canvas.refresh()
+            print("Set new extent and refreshed")
+            
+            # Wait for refresh to complete
+            for i in range(10):  # Wait up to 1 second
+                QCoreApplication.processEvents()
+                time.sleep(0.1)
+            
+            # Create temporary file
+            temp_dir = tempfile.gettempdir()
+            safe_name = "".join(c for c in district_name if c.isalnum() or c in (' ', '-', '_')).rstrip()
+            safe_name = safe_name.replace(' ', '_')
+            map_image_path = os.path.join(temp_dir, f"district_map_{safe_name}.png")
+            print(f"Map will be saved to: {map_image_path}")
+            
+            # Save canvas as image
+            success = canvas.saveAsImage(map_image_path)
+            print(f"Canvas save result: {success}")
+            
+            # Restore original extent immediately
+            canvas.setExtent(original_extent)
+            canvas.refresh()
+            print("Restored original extent")
+            
+            # Check if file was created
+            if os.path.exists(map_image_path):
+                file_size = os.path.getsize(map_image_path)
+                print(f"Map file created with size: {file_size} bytes")
+                if file_size > 1000:  # Reasonable minimum size
+                    return map_image_path
+                else:
+                    print("Map file too small, probably empty")
+                    return None
+            else:
+                print("Map file was not created")
+                return None
+            
+        except Exception as e:
+            print(f"Error creating simple district map: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
+            # Try to restore original extent in case of error
+            try:
+                from qgis.utils import iface
+                if 'original_extent' in locals():
+                    iface.mapCanvas().setExtent(original_extent)
+                    iface.mapCanvas().refresh()
+            except:
+                pass
+            
+            return None
 
     def count_features_in_district(self, layer_name, district_feature):
         """Count features within the district"""
         try:
+            from qgis.core import QgsProject
+            
             layers = QgsProject.instance().mapLayersByName(layer_name)
             if not layers:
+                print(f"Layer '{layer_name}' not found")
                 return 0
             
             layer = layers[0]
@@ -401,12 +576,16 @@ class createCityDistrictProfile(QgsProcessingAlgorithm):
             district_geometry = district_feature.geometry()
             
             for feature in layer.getFeatures():
-                if feature.geometry().intersects(district_geometry):
-                    count += 1
-            
+                try:
+                    if feature.geometry() and feature.geometry().intersects(district_geometry):
+                        count += 1
+                except Exception as e:
+                    print(f"Error checking intersection for feature in {layer_name}: {e}")
+                    continue
+        
+            print(f"Found {count} features in {layer_name}")
             return count
-            
+        
         except Exception as e:
             print(f"Error counting features in {layer_name}: {str(e)}")
             return 0
-    

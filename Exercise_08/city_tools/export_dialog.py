@@ -43,7 +43,7 @@ class ExportDialog(QDialog):
         self.csv_button.setStyleSheet("QPushButton { font-size: 12px; padding: 10px; }")
         button_layout.addWidget(self.csv_button)
         
-        self.pdf_button = QPushButton("Create City District Profile (PDF)")
+        self.pdf_button = QPushButton("Export as PDF file")
         self.pdf_button.setMinimumHeight(50)
         self.pdf_button.setStyleSheet("QPushButton { font-size: 12px; padding: 10px; }")
         button_layout.addWidget(self.pdf_button)
