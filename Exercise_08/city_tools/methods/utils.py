@@ -343,3 +343,70 @@ class createCityDistrictProfile(QgsProcessingAlgorithm):
             return {self.PDF_OUTPUT: pdf_output}
         else:
             raise QgsProcessingException("Failed to create PDF")
+    
+    def create_pdf_profile(self, feature, output_path):
+        """Create PDF profile for a single feature"""
+        try:
+            from reportlab.lib.pagesizes import letter
+            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+            from reportlab.lib.styles import getSampleStyleSheet
+            from qgis.core import QgsProject
+            
+            # Create PDF document
+            doc = SimpleDocTemplate(output_path, pagesize=letter)
+            styles = getSampleStyleSheet()
+            story = []
+
+            
+            # Get feature data
+            district_name = feature['Name'] if 'Name' in feature.fields().names() else "Unknown"
+            parent_district = feature['P_District'] if 'P_District' in feature.fields().names() else "Unknown"
+            area = feature.geometry().area() / 1000000  # km²
+
+            # Count features
+            households = self.count_features_in_district("House_Numbers", feature)
+            parcels = self.count_features_in_district("Muenster_Parcels", feature)
+            schools = self.count_features_in_district("Schools", feature)
+            pools = self.count_features_in_district("public_swimming_pools", feature)
+            
+            # Build PDF content
+            story.append(Paragraph(f"City District Profile: {district_name}", styles['Title']))
+            story.append(Spacer(1, 12))
+            
+            story.append(Paragraph(f"<b>Parent District:</b> {parent_district}", styles['Normal']))
+            story.append(Paragraph(f"<b>Area:</b> {area:.2f} km²", styles['Normal']))
+            story.append(Paragraph(f"<b>Number of Households:</b> {households}", styles['Normal']))
+            story.append(Paragraph(f"<b>Number of Parcels:</b> {parcels}", styles['Normal']))
+            story.append(Paragraph(f"<b>Number of Schools:</b> {schools}", styles['Normal']))
+            story.append(Paragraph(f"<b>Number of Swimming Pools:</b> {pools}", styles['Normal']))
+            
+            # Build PDF
+            doc.build(story)
+            return True
+            
+        except Exception as e:
+            print(f"Error creating PDF: {str(e)}")
+            return False
+
+    def count_features_in_district(self, layer_name, district_feature):
+        """Count features within the district"""
+        try:
+            layers = QgsProject.instance().mapLayersByName(layer_name)
+            if not layers:
+                return 0
+            
+            layer = layers[0]
+            count = 0
+            
+            district_geometry = district_feature.geometry()
+            
+            for feature in layer.getFeatures():
+                if feature.geometry().intersects(district_geometry):
+                    count += 1
+            
+            return count
+            
+        except Exception as e:
+            print(f"Error counting features in {layer_name}: {str(e)}")
+            return 0
+    
