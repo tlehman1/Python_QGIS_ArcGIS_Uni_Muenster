@@ -1,7 +1,7 @@
 import arcpy
 import arcpy.analysis
 # set workspace
-arcpy.env.workspace = r'C:\Users\t.lehmann\Downloads\exercise_arcpy_1.gdb\exercise_arcpy_1.gdb'
+arcpy.env.workspace = r'C:\Users\kgttbran\Desktop\Studium\Repo\Python_QGIS_ArcGIS\Exercise_09\exercise_arcpy_1.gdb'
 #acces active_assets fc
 assets = "active_assets"
 #add field which will be the input for the buffer distance

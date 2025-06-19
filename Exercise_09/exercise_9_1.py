@@ -1,6 +1,6 @@
 import arcpy
 # set workspace
-arcpy.env.workspace = r'C:\Users\t.lehmann\Downloads\exercise_arcpy_1.gdb\exercise_arcpy_1.gdb'
+arcpy.env.workspace = r'C:\Users\kgttbran\Desktop\Studium\Repo\Python_QGIS_ArcGIS\Exercise_09\exercise_arcpy_1.gdb'
 #list all point feature classes, remove active asset fc
 fc_list = arcpy.ListFeatureClasses(feature_type='Point')
 fc_list.remove('active_assets')
