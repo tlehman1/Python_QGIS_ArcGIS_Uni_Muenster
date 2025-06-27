@@ -6,7 +6,7 @@ Script documentation
 - Update derived parameter values using arcpy.SetParameter() or
                                         arcpy.SetParameterAsText()
 """
-# necessary modules for the task
+# necessary imports
 import arcpy
 import os
 
@@ -16,13 +16,13 @@ def script_tool(param0):
     # allow overwriting
     arcpy.env.overwriteOutput = True
     
-    # set workspace (ADD YOUR OWN WORKSPACE HERE!)
-    arcpy.env.workspace = r"C:\Users\t.lehmann\Downloads\arcpy_2.gdb\arcpy_2.gdb"
+    # set workspace (ADD OWN WORKSPACE HERE)
+    arcpy.env.workspace = r"C:\Users\kgttbran\Desktop\Studium\Repo\arcpy_2.gdb"
     
-    # path to the bus stops
+    # path to bus stops
     bs_path_assets = os.path.join(arcpy.env.workspace, "stops_ms_mitte")
         
-    # run the Near tool - IMPORTANT: method should be GEODESIC!
+    # run Near tool
     arcpy.analysis.Near(
         in_features=param0,
         near_features="stops_ms_mitte",
@@ -34,30 +34,30 @@ def script_tool(param0):
         distance_unit="Meters"
     )
     
-    # create a dictionary of bus stops with their OBJECTID as key and name as value
+    # create dictionary of bus stops with their OBJECTID as key and name as value
     bus_stops = { row[0]: row[1] for row in arcpy.da.SearchCursor(bs_path_assets, ["OBJECTID", "name"]) }
     
-    # create an empty list of results
+    # create empty list of results
     results = []
     
-    # search cursor on the input point to search for the nearest bus stop
+    # search cursor on input point to search for nearest bus stop
     with arcpy.da.SearchCursor(param0, ["NEAR_FID", "NEAR_DIST"]) as cursor:
-        # iterate through each row
+        # iterate through bus stops
         for near_fid, near_dist in cursor:
-            # if exists, add the bus stop name and distance to the results list in dictionary
+            # if exists, add bus stop name and distance to results list in dictionary, round distance
             if near_fid in bus_stops:
                 results.append({
                     "name": bus_stops[near_fid],
-                    "distance": near_dist
+                    "distance": round(near_dist,2)
                 })
-    # ultimatly print the results
+    # print results
     for result in results:
-        arcpy.AddMessage(f"Distance to the nearest bus stop: {result['distance']} meters")
-        arcpy.AddMessage(f"Name of the nearest bus stop: {result['name']}")
+        arcpy.AddMessage(f"Name of nearest bus stop: {result['name']}")
+        arcpy.AddMessage(f"Distance to nearest bus stop: {result['distance']} meters")
     return
 
 # check if script is run directly
-# get the input parameter and call the script tool based on the input
+# get input and call script tool based on input
 if __name__ == "__main__":
     param0 = arcpy.GetParameterAsText(0)
     script_tool(param0)
