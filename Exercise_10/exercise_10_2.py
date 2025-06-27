@@ -17,7 +17,7 @@ def script_tool(param0):
     arcpy.env.overwriteOutput = True
     
     # set workspace (ADD OWN WORKSPACE HERE)
-    arcpy.env.workspace = r"C:\Users\kgttbran\Desktop\Studium\Repo\arcpy_2.gdb"
+    arcpy.env.workspace = r"C:\Users\kgttbran\Desktop\Studium\Repo\Python_QGIS_ArcGIS\Exercise_10\arcpy_2.gdb"
     
     # path to bus stops
     bs_path_assets = os.path.join(arcpy.env.workspace, "stops_ms_mitte")
