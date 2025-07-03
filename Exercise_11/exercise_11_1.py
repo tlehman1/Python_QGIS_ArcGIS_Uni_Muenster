@@ -1,4 +1,4 @@
-# exercise 10.2
+# exercise 11
 """
 Script documentation
 - Tool parameters are accessed using arcpy.GetParameter() or 
@@ -17,7 +17,8 @@ def script_tool(input, eval_data, name_field, name_value):
     # adding the progressor
     arcpy.SetProgressor(type='step',message='Application Progress',min_range=0, max_range=4,step_value=1)
     time.sleep(0.5)
-    # checking that parameters are correct
+
+    #### checking that parameters are correct
     arcpy.SetProgressorLabel("Checking the inputs")
     arcpy.SetProgressorPosition(0)
     time.sleep(2)
@@ -25,24 +26,22 @@ def script_tool(input, eval_data, name_field, name_value):
     # allow overwriting
     arcpy.env.overwriteOutput = True
 
-    # set workspace (ADD OWN WORKSPACE HERE)
-    arcpy.env.workspace = r"C:\Users\kgttbran\Desktop\Studium\Repo\Python_QGIS_ArcGIS\Exercise_11\arcpy_2.gdb"
-
-    # Step 1
+    #### create temporary Feature Layer
     arcpy.SetProgressorLabel("Creating temporary layer")
     arcpy.SetProgressorPosition(1)
     time.sleep(2)
 
-    # create Feature Layer
+    # Defining SQL filter
     sql = f"{name_field}='{name_value}'"
     arcpy.AddMessage(f"Filter: {sql}")
 
+    # Creating feature layer from filter
     try:
         arcpy.MakeFeatureLayer_management(in_features=eval_data,out_layer='feats_to_eval',where_clause=sql)
     except:
         arcpy.AddError("Filtered Feature Layer could not be created! Please try again")
         
-    # Step 3
+    #### Run near tool / Calculating distances
     arcpy.SetProgressorLabel("Calculating the distance")
     arcpy.SetProgressorPosition(2)
     time.sleep(2)
@@ -65,7 +64,7 @@ def script_tool(input, eval_data, name_field, name_value):
     # create empty list of results
     results = []
     
-    # Step 4
+    #### Searching nearest bus stop
     arcpy.SetProgressorLabel("Searching for nearest bust stop")
     arcpy.SetProgressorPosition(3)
     time.sleep(2)
@@ -81,7 +80,7 @@ def script_tool(input, eval_data, name_field, name_value):
                     "distance": round(near_dist,2)
                 })
 
-    # Step 5
+    #### Outputting results
     arcpy.SetProgressorLabel("Finishing analysis")
     arcpy.SetProgressorPosition(4)
     time.sleep(2)
