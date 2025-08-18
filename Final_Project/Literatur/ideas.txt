@@ -1,0 +1,17 @@
+Idee:
+    - QGIS Plugin
+Funktionen:
+    - Button für Baublöcke
+        - Inputs
+            - Gemeindegrenze
+            - Ortsteil- / Gemarkungsgrenzen
+            - Nutzungsarten
+                - Müssen linearisiert werden (Center Line)
+            - ATKIS Grenzen
+    - Button nur für Road Details
+        - Nutzungsarten
+            - Müssen linearisiert werden (Center Line)
+    - Jeweils eine Hilfe
+    - Dokumentation
+Datenquellen:
+    - opendata.kreis-guetersloh.de
