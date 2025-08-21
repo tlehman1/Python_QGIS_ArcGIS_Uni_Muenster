@@ -1,0 +1,53 @@
+Super Ziel! Ich habe dir direkt ein lauffähiges QGIS‑Processing‑Skript gebaut, das aus ALKIS‑Straßen + deiner Verwaltungsgrenze automatisch Baublöcke bildet. Du findest den kompletten Code im Canvas rechts („QGIS Processing‑Skript: Baublöcke aus ALKIS + Verwaltungsgrenzen“).
+
+Kurz so funktioniert’s:
+
+Eingaben
+
+Verwaltungsgrenze (Polygon), z. B. Herzebrock‑Clarholz oder ein Teilraum im Kreis Gütersloh.
+
+Straßendaten als Linien (ALKIS/ATKIS/OSM) oder als Flächen (ALKIS Verkehrsfunktionen).
+
+Parameter: Pufferbreite (bei Linien = halbe Fahrbahnbreite, Standard 6 m), minimale Blockfläche, Ziel‑CRS (Standard EPSG:25832).
+
+Verarbeitung (automatisiert):
+
+Geometrien fixen + ins Ziel‑CRS projizieren.
+
+Aus Straßen Barrieren erzeugen (bei Linien via Buffer, bei Flächen via Dissolve).
+
+Barrieren von der Verwaltungsgrenze abziehen → Restflächen zerfallen in Baublöcke.
+
+Kleinstflächen filtern, Felder block_id und area_m2 anhängen.
+
+Output
+
+Polygonlayer mit Baublöcken, sauber nummeriert und mit Fläche in m².
+
+So nutzt du es in QGIS:
+
+Öffne QGIS → Verarbeitung → Toolbox → Rechtsklick „Skripte“ → „Neues Skript…“ → Code aus dem Canvas einfügen → speichern.
+
+Algorithmus erscheint unter „con terra – Kommunal / ALKIS → Baublöcke aus ALKIS + Verwaltungsgrenze“.
+
+Grenz‑Layer wählen, Straßen‑Layer wählen, ggf. Pufferbreite anpassen → Ausführen.
+
+Tipps speziell für ALKIS NRW:
+
+Wenn du Straßen als Linien hast (z. B. AX_Strassenachse): nutze die Pufferbreite (6–8 m ist oft ein guter Startwert; bei Hauptstraßen größer).
+
+Wenn du Straßenflächen hast (z. B. Verkehrsfunktionen als Polygone): aktiviere „Straßen-Layer sind Flächen (kein Buffer nötig)“.
+
+Optional kannst du zusätzlich Gleise/Wasser als weitere Barrieren vorab mit den Straßen zusammenführen (einfach vorher per „Verschmelzen/Dissolve“ zu einem Layer machen und diesen als „Straßen“ übergeben).
+
+Erweiterungen (wenn du magst, kann ich sie direkt einbauen):
+
+Klassenbasierte Puffer (z. B. je Straßentyp unterschiedliche Breite, aus Attributfeld).
+
+Ausschluss von Nicht-Bauland anhand ALKIS „Tatsächliche Nutzung“.
+
+Zusammenfassen (Dissolve) benachbarter Mikro‑Fragmente bis zu Mindestbreiten.
+
+Automatisches Clipping auf Ortsteile/Gemarkungen im Kreis Gütersloh inkl. Batch‑Lauf.
+
+Wenn du mir kurz sagst, welche ALKIS‑Straßenquelle du genau nutzt (Linien vs. Flächen, vorhandene Breitenfelder), passe ich das Skript direkt darauf an — inkl. mehrstufigem Klassen‑Buffering und einem hübschen Plugin‑UI.
