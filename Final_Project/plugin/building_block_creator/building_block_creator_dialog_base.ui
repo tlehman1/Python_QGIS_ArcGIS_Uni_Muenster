@@ -2,15 +2,23 @@
 <ui version="4.0">
  <class>BuildingBlockCreatorDialogBase</class>
  <widget class="QDialog" name="BuildingBlockCreatorDialogBase">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>421</width>
+    <height>372</height>
+   </rect>
+  </property>
   <property name="windowTitle">
    <string>Building Block Creator</string>
   </property>
   <widget class="QDialogButtonBox" name="button_box">
    <property name="geometry">
     <rect>
-     <x>50</x>
+     <x>140</x>
      <y>320</y>
-     <width>341</width>
+     <width>251</width>
      <height>32</height>
     </rect>
    </property>
@@ -64,7 +72,7 @@
        </sizepolicy>
       </property>
       <property name="text">
-       <string>Collapse Road Details</string>
+       <string>Road Details</string>
       </property>
      </widget>
     </item>
@@ -93,14 +101,14 @@
   <widget class="QLabel" name="label_2">
    <property name="geometry">
     <rect>
-     <x>40</x>
+     <x>30</x>
      <y>50</y>
-     <width>341</width>
+     <width>351</width>
      <height>51</height>
     </rect>
    </property>
    <property name="text">
-    <string>This plugin combines ALKIS and ATKIS data to create building blocks semi-automatically. The &quot;Collapse Road Detail&quot; tool can be called separatly.</string>
+    <string>This plugin combines ALKIS and ATKIS data to create building blocks semi-automatically. The &quot;Road Details&quot; tool can be called separately.</string>
    </property>
    <property name="alignment">
     <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignTop</set>
@@ -109,37 +117,24 @@
     <bool>true</bool>
    </property>
   </widget>
-  <widget class="QWidget" name="horizontalLayoutWidget">
+  <widget class="QPushButton" name="pushButton_3">
    <property name="geometry">
     <rect>
-     <x>30</x>
+     <x>50</x>
      <y>320</y>
-     <width>201</width>
-     <height>31</height>
+     <width>80</width>
+     <height>32</height>
     </rect>
    </property>
-   <layout class="QHBoxLayout" name="horizontalLayout">
-    <item>
-     <widget class="QPushButton" name="pushButton_4">
-      <property name="text">
-       <string>Help</string>
-      </property>
-     </widget>
-    </item>
-    <item>
-     <widget class="QPushButton" name="pushButton_3">
-      <property name="cursor">
-       <cursorShape>PointingHandCursor</cursorShape>
-      </property>
-      <property name="toolTip">
-       <string>See the theoretical background</string>
-      </property>
-      <property name="text">
-       <string>About</string>
-      </property>
-     </widget>
-    </item>
-   </layout>
+   <property name="cursor">
+    <cursorShape>PointingHandCursor</cursorShape>
+   </property>
+   <property name="toolTip">
+    <string>See the theoretical background</string>
+   </property>
+   <property name="text">
+    <string>About</string>
+   </property>
   </widget>
  </widget>
  <resources/>

@@ -106,25 +106,15 @@ class BuildingBlockCreatorDialog(QtWidgets.QDialog, FORM_CLASS):
         self.label_2.setWordWrap(True)
         self.label_2.setObjectName("label_2")
         
-        self.horizontalLayoutWidget = QtWidgets.QWidget(BuildingBlockCreatorDialogBase)
-        self.horizontalLayoutWidget.setGeometry(QtCore.QRect(30, 320, 201, 31))
-        self.horizontalLayoutWidget.setObjectName("horizontalLayoutWidget")
-        
-        self.horizontalLayout = QtWidgets.QHBoxLayout(self.horizontalLayoutWidget)
-        self.horizontalLayout.setContentsMargins(0, 0, 0, 0)
-        self.horizontalLayout.setObjectName("horizontalLayout")
-        
-        self.pushButton_4 = QtWidgets.QPushButton(self.horizontalLayoutWidget)
-        self.pushButton_4.setObjectName("pushButton_4")
-        
-        self.horizontalLayout.addWidget(self.pushButton_4)
-        
-        self.pushButton_3 = QtWidgets.QPushButton(self.horizontalLayoutWidget)
+        self.pushButton_3 = QtWidgets.QPushButton(BuildingBlockCreatorDialogBase)
+        self.pushButton_3.setGeometry(QtCore.QRect(30, 320, 100, 31))
         self.pushButton_3.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
         self.pushButton_3.setObjectName("pushButton_3")
         self.pushButton_3.clicked.connect(self.on_about_clicked)
-
-        self.horizontalLayout.addWidget(self.pushButton_3)
+        
+        # Connect main buttons
+        self.pushButton.clicked.connect(self.on_building_blocks_clicked)
+        self.pushButton_2.clicked.connect(self.on_road_details_clicked)
 
         self.retranslateUi(BuildingBlockCreatorDialogBase)
         self.button_box.accepted.connect(BuildingBlockCreatorDialogBase.accept) # type: ignore
@@ -135,10 +125,9 @@ class BuildingBlockCreatorDialog(QtWidgets.QDialog, FORM_CLASS):
         _translate = QtCore.QCoreApplication.translate
         BuildingBlockCreatorDialogBase.setWindowTitle(_translate("BuildingBlockCreatorDialogBase", "Building Block Creator"))
         self.pushButton.setText(_translate("BuildingBlockCreatorDialogBase", "Building Blocks"))
-        self.pushButton_2.setText(_translate("BuildingBlockCreatorDialogBase", "Collapse Road Details"))
+        self.pushButton_2.setText(_translate("BuildingBlockCreatorDialogBase", "Road Details"))
         self.label.setText(_translate("BuildingBlockCreatorDialogBase", "Building Block Creator"))
-        self.label_2.setText(_translate("BuildingBlockCreatorDialogBase", "This plugin combines ALKIS and ATKIS data to create building blocks semi-automatically. The \"Collapse Road Detail\" tool can be called separatly."))
-        self.pushButton_4.setText(_translate("BuildingBlockCreatorDialogBase", "Help"))
+        self.label_2.setText(_translate("BuildingBlockCreatorDialogBase", "This plugin combines ALKIS and ATKIS data to create building blocks semi-automatically. The \"Road Details\" tool can be called separately."))
         self.pushButton_3.setToolTip(_translate("BuildingBlockCreatorDialogBase", "See the theoretical background"))
         self.pushButton_3.setText(_translate("BuildingBlockCreatorDialogBase", "About"))
 
@@ -147,11 +136,22 @@ class BuildingBlockCreatorDialog(QtWidgets.QDialog, FORM_CLASS):
         url = "https://github.com/tlehman1/Python_QGIS_ArcGIS_Uni_Muenster/blob/main/Exercise_13/2019-04-11-AbleitungVonBaubloecken_Kelm.pdf"
         webbrowser.open(url)
     
-    def on_creator_clicked(self):
-        """Handle Creator button click."""
+    def on_building_blocks_clicked(self):
+        """Handle Building Blocks button click."""
         try:
             from .creator_dialog import CreatorDialog
             dialog = CreatorDialog(self)
             dialog.exec_()
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Could not open query dialog: {e}")
+            from qgis.PyQt.QtWidgets import QMessageBox
+            QMessageBox.critical(self, "Error", f"Could not open Building Blocks dialog: {e}")
+            
+    def on_road_details_clicked(self):
+        """Handle Road Details button click."""
+        try:
+            from .road_details_dialog import RoadDetailsDialog
+            dialog = RoadDetailsDialog(self)
+            dialog.exec_()
+        except Exception as e:
+            from qgis.PyQt.QtWidgets import QMessageBox
+            QMessageBox.critical(self, "Error", f"Could not open Road Details dialog: {e}")

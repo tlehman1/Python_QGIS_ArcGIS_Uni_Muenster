@@ -1,24 +1,24 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
- <class>Dialog</class>
- <widget class="QDialog" name="Dialog">
+ <class>RoadDetailsDialog</class>
+ <widget class="QDialog" name="RoadDetailsDialog">
   <property name="geometry">
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>430</width>
-    <height>400</height>
+    <width>500</width>
+    <height>430</height>
    </rect>
   </property>
   <property name="windowTitle">
-   <string>Building Blocks Creator</string>
+   <string>Road Details - Center Line Creation</string>
   </property>
   <widget class="QDialogButtonBox" name="buttonBox">
    <property name="geometry">
     <rect>
-     <x>130</x>
-     <y>350</y>
-     <width>261</width>
+     <x>320</x>
+     <y>380</y>
+     <width>161</width>
      <height>32</height>
     </rect>
    </property>
@@ -32,8 +32,8 @@
   <widget class="QPushButton" name="helpButton">
    <property name="geometry">
     <rect>
-     <x>40</x>
-     <y>350</y>
+     <x>20</x>
+     <y>380</y>
      <width>80</width>
      <height>32</height>
     </rect>
@@ -42,99 +42,23 @@
     <string>Help</string>
    </property>
    <property name="toolTip">
-    <string>Show help for Building Blocks creation</string>
-   </property>
-  </widget>
-  <widget class="QLabel" name="titleLabel">
-   <property name="geometry">
-    <rect>
-     <x>40</x>
-     <y>10</y>
-     <width>350</width>
-     <height>25</height>
-    </rect>
-   </property>
-   <property name="font">
-    <font>
-     <pointsize>14</pointsize>
-     <weight>75</weight>
-     <bold>true</bold>
-    </font>
-   </property>
-   <property name="text">
-    <string>Create Building Blocks</string>
-   </property>
-  </widget>
-  <widget class="QLabel" name="subtitleLabel">
-   <property name="geometry">
-    <rect>
-     <x>40</x>
-     <y>35</y>
-     <width>350</width>
-     <height>32</height>
-    </rect>
-   </property>
-   <property name="text">
-    <string>This tool combines municipal boundaries, district boundaries and land use data.</string>
-   </property>
-   <property name="wordWrap">
-    <bool>true</bool>
+    <string>Show help for Road Details center line creation</string>
    </property>
   </widget>
   <widget class="QWidget" name="verticalLayoutWidget">
    <property name="geometry">
     <rect>
-     <x>40</x>
-     <y>70</y>
-     <width>351</width>
-     <height>241</height>
+     <x>20</x>
+     <y>60</y>
+     <width>461</width>
+     <height>281</height>
     </rect>
    </property>
    <layout class="QVBoxLayout" name="verticalLayout">
     <item>
-     <widget class="QLabel" name="label">
+     <widget class="QLabel" name="label_usage_layer">
       <property name="text">
-       <string>Municipal Boundary Layer:</string>
-      </property>
-      <property name="font">
-       <font>
-        <weight>75</weight>
-        <bold>true</bold>
-       </font>
-      </property>
-     </widget>
-    </item>
-    <item>
-     <widget class="QgsMapLayerComboBox" name="communityLayerCombo">
-      <property name="toolTip">
-       <string>Select the municipal boundary layer</string>
-      </property>
-     </widget>
-    </item>
-    <item>
-     <widget class="QLabel" name="label_2">
-      <property name="text">
-       <string>District Boundary Layer:</string>
-      </property>
-      <property name="font">
-       <font>
-        <weight>75</weight>
-        <bold>true</bold>
-       </font>
-      </property>
-     </widget>
-    </item>
-    <item>
-     <widget class="QgsMapLayerComboBox" name="gemarkungLayerCombo">
-      <property name="toolTip">
-       <string>Select the district boundary layer</string>
-      </property>
-     </widget>
-    </item>
-    <item>
-     <widget class="QLabel" name="label_3">
-      <property name="text">
-       <string>Land Use Layer:</string>
+       <string>Usage Layer:</string>
       </property>
       <property name="font">
        <font>
@@ -147,12 +71,44 @@
     <item>
      <widget class="QgsMapLayerComboBox" name="usageLayerCombo">
       <property name="toolTip">
-       <string>Select the land use layer</string>
+       <string>Select the road/usage layer for center line creation</string>
       </property>
      </widget>
     </item>
     <item>
-     <widget class="QLabel" name="label_4">
+     <widget class="QLabel" name="label_buffer">
+      <property name="text">
+       <string>Buffer Distance (meters):</string>
+      </property>
+      <property name="font">
+       <font>
+        <weight>75</weight>
+        <bold>true</bold>
+       </font>
+      </property>
+     </widget>
+    </item>
+    <item>
+     <widget class="QDoubleSpinBox" name="bufferSpinBox">
+      <property name="toolTip">
+       <string>Buffer distance for center line calculation</string>
+      </property>
+      <property name="minimum">
+       <double>0.100000000000000</double>
+      </property>
+      <property name="maximum">
+       <double>1000.000000000000000</double>
+      </property>
+      <property name="singleStep">
+       <double>0.500000000000000</double>
+      </property>
+      <property name="value">
+       <double>2.000000000000000</double>
+      </property>
+     </widget>
+    </item>
+    <item>
+     <widget class="QLabel" name="label_output">
       <property name="text">
        <string>Output Layer Name:</string>
       </property>
@@ -167,10 +123,10 @@
     <item>
      <widget class="QLineEdit" name="outputNameEdit">
       <property name="toolTip">
-       <string>Name for the output building blocks layer</string>
+       <string>Name for the output center line layer</string>
       </property>
       <property name="text">
-       <string>building_blocks</string>
+       <string>road_center_lines</string>
       </property>
      </widget>
     </item>
@@ -186,6 +142,39 @@
     </item>
    </layout>
   </widget>
+  <widget class="QLabel" name="label_title">
+   <property name="geometry">
+    <rect>
+     <x>20</x>
+     <y>10</y>
+     <width>460</width>
+     <height>31</height>
+    </rect>
+   </property>
+   <property name="font">
+    <font>
+     <pointsize>14</pointsize>
+     <weight>75</weight>
+     <bold>true</bold>
+    </font>
+   </property>
+   <property name="text">
+    <string>Create Center Lines from Roads</string>
+   </property>
+  </widget>
+  <widget class="QLabel" name="label_description">
+   <property name="geometry">
+    <rect>
+     <x>20</x>
+     <y>40</y>
+     <width>461</width>
+     <height>16</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string>This tool creates center lines from road polygons by linearization.</string>
+   </property>
+  </widget>
  </widget>
  <customwidgets>
   <customwidget>
@@ -199,7 +188,7 @@
   <connection>
    <sender>buttonBox</sender>
    <signal>accepted()</signal>
-   <receiver>Dialog</receiver>
+   <receiver>RoadDetailsDialog</receiver>
    <slot>accept()</slot>
    <hints>
     <hint type="sourcelabel">
@@ -215,7 +204,7 @@
   <connection>
    <sender>buttonBox</sender>
    <signal>rejected()</signal>
-   <receiver>Dialog</receiver>
+   <receiver>RoadDetailsDialog</receiver>
    <slot>reject()</slot>
    <hints>
     <hint type="sourcelabel">
