@@ -7,7 +7,7 @@ name=Building Block Creator
 qgisMinimumVersion=3.0
 description=This plugin combines ALKIS and ATKIS data to create building blocks semi-automatically.
 version=0.1
-author=Lehmann, T., BRand, T.
+author=Lehmann, T., Brand, T.
 email=t.brand@uni-muenster.de, t.lehmann@uni-muenster.de
 
 about=This plugin combines ALKIS and ATKIS data to create building blocks semi-automatically.
