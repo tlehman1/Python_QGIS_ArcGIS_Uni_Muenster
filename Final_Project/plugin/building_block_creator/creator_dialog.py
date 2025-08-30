@@ -59,16 +59,18 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
         self.gemarkungLayerCombo.setFilters(QgsMapLayerProxyModel.PolygonLayer)
         self.usageLayerCombo.setFilters(QgsMapLayerProxyModel.PolygonLayer)
         
+        # Allow null selection (empty field)
+        self.communityLayerCombo.setAllowEmptyLayer(True)
+        self.gemarkungLayerCombo.setAllowEmptyLayer(True)
+        self.usageLayerCombo.setAllowEmptyLayer(True)
+        
+        # Set to empty initially
+        self.communityLayerCombo.setCurrentIndex(-1)
+        self.gemarkungLayerCombo.setCurrentIndex(-1)
+        self.usageLayerCombo.setCurrentIndex(-1)
+        
         # Auto-select specific layers if they exist
         self.auto_select_layers()
-        
-        # Set placeholder text if no layers were auto-selected
-        if not self.communityLayerCombo.currentLayer():
-            self.communityLayerCombo.setCurrentText("Select layer")
-        if not self.gemarkungLayerCombo.currentLayer():
-            self.gemarkungLayerCombo.setCurrentText("Select layer")
-        if not self.usageLayerCombo.currentLayer():
-            self.usageLayerCombo.setCurrentText("Select layer")
     
     def auto_select_layers(self):
         """Auto-select layers with specific names if they are loaded."""
