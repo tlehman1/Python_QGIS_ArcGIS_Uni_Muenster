@@ -24,11 +24,12 @@
 
 import os
 from qgis.PyQt import uic, QtWidgets
-from qgis.PyQt.QtWidgets import QMessageBox
+from qgis.PyQt.QtWidgets import QMessageBox, QProgressDialog
+from qgis.PyQt.QtCore import Qt
 from qgis.core import (
     QgsProject, QgsVectorLayer, QgsFeature, QgsGeometry, 
     QgsField, QgsFields, QgsWkbTypes, QgsProcessingException,
-    QgsVectorFileWriter, QgsCoordinateReferenceSystem
+    QgsVectorFileWriter, QgsCoordinateReferenceSystem, QgsPointXY
 )
 from qgis.PyQt.QtCore import QVariant
 import processing
@@ -54,8 +55,25 @@ class RoadDetailsDialog(QtWidgets.QDialog, FORM_CLASS):
         # Set filter to show only polygon layers
         self.usageLayerCombo.setFilters(QgsMapLayerProxyModel.PolygonLayer)
         
-        # Set placeholder text
-        self.usageLayerCombo.setCurrentText("Select layer")
+        # Allow null selection (empty field)
+        self.usageLayerCombo.setAllowEmptyLayer(True)
+        
+        # Set to empty initially
+        self.usageLayerCombo.setCurrentIndex(-1)
+        
+        # Auto-select nutzungFlurstueck layer if available
+        self.auto_select_usage_layer()
+    
+    def auto_select_usage_layer(self):
+        """Auto-select nutzungFlurstueck layer if it is loaded."""
+        project = QgsProject.instance()
+        
+        # Search for nutzungFlurstueck layer
+        for layer in project.mapLayers().values():
+            if layer.name() == 'nutzungFlurstueck':
+                self.usageLayerCombo.setLayer(layer)
+                print(f"Debug: Auto-selected layer 'nutzungFlurstueck' in Road Details dialog")
+                break
         
     def accept(self):
         """Process the center line creation when OK is clicked."""
@@ -70,19 +88,27 @@ class RoadDetailsDialog(QtWidgets.QDialog, FORM_CLASS):
             output_name = self.outputNameEdit.text().strip()
             
             if not output_name:
-                output_name = "road_center_lines"
+                output_name = "road_centerlines"
+            
+            # Create and show progress dialog
+            progress = QProgressDialog("Processing road centerlines...", "Cancel", 0, 100, self)
+            progress.setWindowModality(Qt.WindowModal)
+            progress.setWindowTitle("Processing")
+            progress.show()
                 
-            # Create center lines
+            # Filter, dissolve and create centerlines
             result_layer = self.create_center_lines(
-                selected_layer, buffer_distance, output_name
+                selected_layer, buffer_distance, output_name, progress
             )
+            
+            progress.close()
             
             if result_layer and self.addToMapCheckBox.isChecked():
                 QgsProject.instance().addMapLayer(result_layer)
                 
             QMessageBox.information(
                 self, "Success", 
-                f"Center lines created successfully as '{output_name}'"
+                f"Buffered roads created successfully as '{output_name}' with {buffer_distance}m buffer"
             )
             
             super(RoadDetailsDialog, self).accept()
@@ -90,142 +116,348 @@ class RoadDetailsDialog(QtWidgets.QDialog, FORM_CLASS):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to create center lines: {str(e)}")
             
-    def create_center_lines(self, input_layer, buffer_distance, output_name):
-        """Create center lines from polygon features."""
+    def create_center_lines(self, input_layer, buffer_distance, output_name, progress=None):
+        """Filter, dissolve and create centerlines from 'Weg' and 'Straßenverkehr' features."""
         try:
-            # Create a memory layer for the result
-            crs = input_layer.crs()
+            if progress:
+                progress.setLabelText("Step 1: Filtering road features...")
+                progress.setValue(10)
+                QtWidgets.QApplication.processEvents()
+            
+            # Step 1: Filter features for road types
+            filtered_features = self.filter_road_features(input_layer, progress)
+            
+            if not filtered_features:
+                raise QgsProcessingException("No road features found with usage types 'Weg' or 'Straßenverkehr'")
+            
+            if progress:
+                progress.setLabelText("Step 2: Creating dissolved geometries...")
+                progress.setValue(30)
+                QtWidgets.QApplication.processEvents()
+            
+            # Step 2: Dissolve/Union the filtered geometries
+            dissolved_geometry = self.dissolve_road_features(filtered_features, progress)
+            
+            if not dissolved_geometry or dissolved_geometry.isNull():
+                raise QgsProcessingException("Failed to dissolve road geometries")
+            
+            if progress:
+                progress.setLabelText("Step 3: Creating centerlines...")
+                progress.setValue(60)
+                QtWidgets.QApplication.processEvents()
+            
+            # Step 3: Create centerlines from dissolved geometry
+            centerlines = self.create_centerlines_from_dissolved(dissolved_geometry, buffer_distance, progress)
+            
+            if not centerlines:
+                raise QgsProcessingException("Failed to create centerlines from dissolved geometry")
+            
+            if progress:
+                progress.setLabelText("Step 4: Applying buffer to centerlines...")
+                progress.setValue(80)
+                QtWidgets.QApplication.processEvents()
+            
+            # Step 4: Apply buffer to centerlines to create road polygons
+            buffered_roads = self.apply_buffer_to_centerlines(centerlines, buffer_distance, progress)
+            
+            if progress:
+                progress.setLabelText("Step 5: Building result layer...")
+                progress.setValue(90)
+                QtWidgets.QApplication.processEvents()
+            
+            # Step 5: Create result layer with buffered roads
+            result_layer = self.build_buffered_road_layer(buffered_roads, input_layer.crs(), output_name, buffer_distance)
+            
+            if progress:
+                progress.setValue(100)
+                QtWidgets.QApplication.processEvents()
+            
+            print(f"Debug: Created {len(buffered_roads)} buffered roads from {len(filtered_features)} filtered features")
+            return result_layer
+            
+        except Exception as e:
+            raise QgsProcessingException(f"Error creating centerlines: {str(e)}")
+    
+    def dissolve_road_features(self, filtered_features, progress=None):
+        """Dissolve/Union all filtered road features into single geometry."""
+        try:
+            if not filtered_features:
+                return None
+            
+            # Start with first geometry
+            dissolved_geom = filtered_features[0].geometry()
+            
+            # Union with all other geometries
+            for i, feature in enumerate(filtered_features[1:], 1):
+                if progress and i % 10 == 0:
+                    progress_value = 30 + int((i / len(filtered_features)) * 20)
+                    progress.setValue(progress_value)
+                    progress.setLabelText(f"Dissolving geometry {i}/{len(filtered_features)}")
+                    QtWidgets.QApplication.processEvents()
+                
+                geom = feature.geometry()
+                if geom and not geom.isNull():
+                    dissolved_geom = dissolved_geom.combine(geom)
+            
+            print(f"Debug: Dissolved {len(filtered_features)} features into single geometry")
+            return dissolved_geom
+            
+        except Exception as e:
+            print(f"Debug: Error in dissolve_road_features: {e}")
+            return None
+    
+    def create_centerlines_from_dissolved(self, dissolved_geometry, buffer_distance, progress=None):
+        """Create centerlines from dissolved geometry using QGIS skeleton algorithm."""
+        centerlines = []
+        
+        try:
+            # Handle multipart geometry
+            if dissolved_geometry.isMultipart():
+                if dissolved_geometry.type() == QgsWkbTypes.PolygonGeometry:
+                    multipolygon = dissolved_geometry.asMultiPolygon()
+                    for i, polygon in enumerate(multipolygon):
+                        if progress:
+                            progress_value = 60 + int((i / len(multipolygon)) * 15)
+                            progress.setValue(progress_value)
+                            progress.setLabelText(f"Processing polygon {i+1}/{len(multipolygon)}")
+                            QtWidgets.QApplication.processEvents()
+                        
+                        if polygon:
+                            single_geom = QgsGeometry.fromPolygonXY(polygon)
+                            skeleton_lines = self.compute_skeleton_for_polygon(single_geom)
+                            centerlines.extend(skeleton_lines)
+            else:
+                # Single part geometry
+                skeleton_lines = self.compute_skeleton_for_polygon(dissolved_geometry)
+                centerlines.extend(skeleton_lines)
+            
+            print(f"Debug: Created {len(centerlines)} centerlines from dissolved geometry")
+            return centerlines
+            
+        except Exception as e:
+            print(f"Debug: Error in create_centerlines_from_dissolved: {e}")
+            return []
+    
+    def compute_skeleton_for_polygon(self, polygon_geom):
+        """Compute skeleton lines for a single polygon using QGIS processing."""
+        skeleton_lines = []
+        
+        try:
+            # Create temporary layer with the polygon
+            temp_layer = QgsVectorLayer("Polygon", "temp_polygon", "memory")
+            temp_layer.dataProvider().addAttributes([QgsField("id", QVariant.Int)])
+            temp_layer.updateFields()
+            temp_layer.startEditing()
+            
+            feature = QgsFeature(temp_layer.fields())
+            feature.setGeometry(polygon_geom)
+            feature.setAttribute("id", 1)
+            temp_layer.dataProvider().addFeature(feature)
+            temp_layer.commitChanges()
+            
+            # Use QGIS processing to compute the polygon skeleton
+            result = processing.run(
+                "qgis:polygonskeleton",
+                {
+                    'INPUT': temp_layer,
+                    'OUTPUT': 'TEMPORARY_OUTPUT'
+                }
+            )
+            
+            # Extract skeleton lines from the result
+            skeleton_layer = result['OUTPUT']
+            for feature in skeleton_layer.getFeatures():
+                skeleton_geom = feature.geometry()
+                if skeleton_geom and not skeleton_geom.isNull():
+                    skeleton_lines.append(skeleton_geom)
+                    
+        except Exception as e:
+            print(f"Debug: QGIS skeleton algorithm failed: {e}")
+            # Fallback to simple centerline
+            fallback_line = self.create_simple_centerline(polygon_geom)
+            if fallback_line:
+                skeleton_lines.append(fallback_line)
+            
+        return skeleton_lines
+    
+    def create_simple_centerline(self, polygon_geom):
+        """Create simple centerline as fallback."""
+        try:
+            bounds = polygon_geom.boundingBox()
+            centroid = polygon_geom.centroid().asPoint()
+            
+            if bounds.width() > bounds.height():
+                # Horizontal line
+                line_geom = QgsGeometry.fromPolylineXY([
+                    QgsPointXY(bounds.xMinimum() + bounds.width() * 0.05, centroid.y()),
+                    QgsPointXY(bounds.xMaximum() - bounds.width() * 0.05, centroid.y())
+                ])
+            else:
+                # Vertical line
+                line_geom = QgsGeometry.fromPolylineXY([
+                    QgsPointXY(centroid.x(), bounds.yMinimum() + bounds.height() * 0.05),
+                    QgsPointXY(centroid.x(), bounds.yMaximum() - bounds.height() * 0.05)
+                ])
+            
+            return line_geom
+            
+        except Exception as e:
+            print(f"Debug: Error in create_simple_centerline: {e}")
+            return None
+    
+    def apply_buffer_to_centerlines(self, centerlines, buffer_distance, progress=None):
+        """Apply buffer to centerlines to create road polygons."""
+        buffered_roads = []
+        
+        try:
+            for i, centerline in enumerate(centerlines):
+                if progress and i % 5 == 0:
+                    progress_value = 80 + int((i / len(centerlines)) * 8)
+                    progress.setValue(progress_value)
+                    progress.setLabelText(f"Buffering centerline {i+1}/{len(centerlines)}")
+                    QtWidgets.QApplication.processEvents()
+                
+                if centerline and not centerline.isNull():
+                    # Apply buffer to create road polygon
+                    buffered = centerline.buffer(buffer_distance, segments=8)
+                    if buffered and not buffered.isNull():
+                        buffered_roads.append({
+                            'geometry': buffered,
+                            'centerline': centerline,
+                            'length': centerline.length()
+                        })
+            
+            print(f"Debug: Applied {buffer_distance}m buffer to {len(centerlines)} centerlines")
+            return buffered_roads
+            
+        except Exception as e:
+            print(f"Debug: Error in apply_buffer_to_centerlines: {e}")
+            return []
+    
+    def build_buffered_road_layer(self, buffered_roads, crs, output_name, buffer_distance):
+        """Build the final buffered road layer."""
+        try:
+            result_layer = QgsVectorLayer(
+                f"Polygon?crs={crs.authid()}", 
+                output_name, 
+                "memory"
+            )
+            
+            # Add fields
+            fields = QgsFields()
+            fields.append(QgsField("road_id", QVariant.Int))
+            fields.append(QgsField("length_m", QVariant.Double))
+            fields.append(QgsField("area_sqm", QVariant.Double))
+            fields.append(QgsField("buffer_m", QVariant.Double))
+            fields.append(QgsField("type", QVariant.String))
+            
+            result_layer.dataProvider().addAttributes(fields)
+            result_layer.updateFields()
+            result_layer.startEditing()
+            
+            # Add buffered roads as features
+            road_id = 1
+            for road_data in buffered_roads:
+                buffered_geom = road_data['geometry']
+                length = road_data['length']
+                
+                if buffered_geom and not buffered_geom.isNull():
+                    feature = QgsFeature(result_layer.fields())
+                    feature.setGeometry(buffered_geom)
+                    feature.setAttribute("road_id", road_id)
+                    feature.setAttribute("length_m", length)
+                    feature.setAttribute("area_sqm", buffered_geom.area())
+                    feature.setAttribute("buffer_m", buffer_distance)
+                    feature.setAttribute("type", "buffered_road")
+                    
+                    result_layer.dataProvider().addFeature(feature)
+                    road_id += 1
+            
+            result_layer.commitChanges()
+            result_layer.updateExtents()
+            
+            print(f"Debug: Created buffered road layer with {road_id-1} features")
+            return result_layer
+            
+        except Exception as e:
+            print(f"Debug: Error in build_buffered_road_layer: {e}")
+            return None
+    
+    def build_centerline_layer(self, centerlines, crs, output_name):
+        """Build the final centerline layer."""
+        try:
             result_layer = QgsVectorLayer(
                 f"LineString?crs={crs.authid()}", 
                 output_name, 
                 "memory"
             )
             
-            # Copy fields from input layer
-            result_layer.dataProvider().addAttributes(input_layer.fields())
-            result_layer.updateFields()
+            # Add fields
+            fields = QgsFields()
+            fields.append(QgsField("line_id", QVariant.Int))
+            fields.append(QgsField("length_m", QVariant.Double))
+            fields.append(QgsField("type", QVariant.String))
             
+            result_layer.dataProvider().addAttributes(fields)
+            result_layer.updateFields()
             result_layer.startEditing()
             
-            for feature in input_layer.getFeatures():
-                geom = feature.geometry()
-                
-                if geom.isNull() or geom.isEmpty():
-                    continue
+            # Add centerlines as features
+            line_id = 1
+            for centerline in centerlines:
+                if centerline and not centerline.isNull():
+                    feature = QgsFeature(result_layer.fields())
+                    feature.setGeometry(centerline)
+                    feature.setAttribute("line_id", line_id)
+                    feature.setAttribute("length_m", centerline.length())
+                    feature.setAttribute("type", "road_centerline")
                     
-                # Create center line using polygon centroid approach
-                center_line = self.polygon_to_centerline(geom, buffer_distance)
-                
-                if center_line and not center_line.isNull():
-                    # Create new feature
-                    new_feature = QgsFeature(result_layer.fields())
-                    new_feature.setGeometry(center_line)
-                    
-                    # Copy attributes
-                    for field_idx in range(len(input_layer.fields())):
-                        new_feature.setAttribute(field_idx, feature.attribute(field_idx))
-                        
-                    result_layer.dataProvider().addFeature(new_feature)
-                    
+                    result_layer.dataProvider().addFeature(feature)
+                    line_id += 1
+            
             result_layer.commitChanges()
             result_layer.updateExtents()
             
             return result_layer
             
         except Exception as e:
-            raise QgsProcessingException(f"Error creating center lines: {str(e)}")
+            print(f"Debug: Error in build_centerline_layer: {e}")
+            return None
+    
+    def filter_road_features(self, input_layer, progress=None):
+        """Filter features for road types ('Weg' and 'Straßenverkehr')."""
+        allowed_usage_types = {'Weg', 'Straßenverkehr'}
+        filtered_features = []
+        
+        total_features = input_layer.featureCount()
+        processed = 0
+        
+        for feature in input_layer.getFeatures():
+            processed += 1
+            if progress and processed % 100 == 0:
+                progress_value = 10 + int((processed / total_features) * 15)  # 10-25%
+                progress.setValue(progress_value)
+                progress.setLabelText(f"Filtering... {processed}/{total_features}")
+                QtWidgets.QApplication.processEvents()
             
-    def polygon_to_centerline(self, polygon_geom, buffer_distance):
-        """Convert polygon to center line using medial axis approximation."""
-        try:
-            # Get the polygon boundary
-            boundary = polygon_geom.boundary()
-            
-            # Create buffer inward to get approximate medial axis
-            inward_buffer = polygon_geom.buffer(-buffer_distance)
-            
-            if inward_buffer.isNull() or inward_buffer.isEmpty():
-                # If buffer is too large, use centroid-based approach
-                centroid = polygon_geom.centroid()
-                bounds = polygon_geom.boundingBox()
-                
-                # Create a simple line through the centroid
-                if bounds.width() > bounds.height():
-                    # Horizontal line
-                    start_point = QgsGeometry.fromPointXY(
-                        QgsPointXY(bounds.xMinimum(), centroid.asPoint().y())
-                    )
-                    end_point = QgsGeometry.fromPointXY(
-                        QgsPointXY(bounds.xMaximum(), centroid.asPoint().y())
-                    )
-                else:
-                    # Vertical line
-                    start_point = QgsGeometry.fromPointXY(
-                        QgsPointXY(centroid.asPoint().x(), bounds.yMinimum())
-                    )
-                    end_point = QgsGeometry.fromPointXY(
-                        QgsPointXY(centroid.asPoint().x(), bounds.yMaximum())
-                    )
-                
-                center_line = start_point.shortestLine(end_point)
-                return center_line.intersection(polygon_geom)
-            
-            # Get the skeleton/medial axis from the buffered polygon
-            if inward_buffer.type() == QgsWkbTypes.PolygonGeometry:
-                # Convert to line by getting the boundary and then simplifying
-                medial_boundary = inward_buffer.boundary()
-                
-                # Simplify to get main axis
-                simplified = medial_boundary.simplify(buffer_distance / 2)
-                
-                if simplified.type() == QgsWkbTypes.LineGeometry:
-                    return simplified
-                    
-            # Fallback: create line from centroid extending along major axis
-            centroid = polygon_geom.centroid()
-            bounds = polygon_geom.boundingBox()
-            
-            # Determine major axis direction
-            if bounds.width() > bounds.height():
-                # Horizontal orientation
-                length = bounds.width() * 0.8
-                start_x = centroid.asPoint().x() - length / 2
-                end_x = centroid.asPoint().x() + length / 2
-                y = centroid.asPoint().y()
-                
-                line_geom = QgsGeometry.fromPolylineXY([
-                    QgsPointXY(start_x, y),
-                    QgsPointXY(end_x, y)
-                ])
-            else:
-                # Vertical orientation  
-                length = bounds.height() * 0.8
-                x = centroid.asPoint().x()
-                start_y = centroid.asPoint().y() - length / 2
-                end_y = centroid.asPoint().y() + length / 2
-                
-                line_geom = QgsGeometry.fromPolylineXY([
-                    QgsPointXY(x, start_y),
-                    QgsPointXY(x, end_y)
-                ])
-            
-            # Clip line to polygon boundary
-            clipped = line_geom.intersection(polygon_geom)
-            return clipped
-            
-        except Exception as e:
-            # Return a simple centroid-based line as fallback
-            centroid = polygon_geom.centroid()
-            bounds = polygon_geom.boundingBox()
-            
-            # Create minimal line at centroid
-            point = centroid.asPoint()
-            small_line = QgsGeometry.fromPolylineXY([
-                QgsPointXY(point.x() - 0.1, point.y()),
-                QgsPointXY(point.x() + 0.1, point.y())
-            ])
-            
-            return small_line
+            usage_type = self.get_feature_usage_type(feature)
+            if usage_type and usage_type in allowed_usage_types:
+                filtered_features.append(feature)
+        
+        print(f"Debug: Found {len(filtered_features)} road features out of {total_features} total")
+        return filtered_features
+    
+    def get_feature_usage_type(self, feature):
+        """Extract usage type from a feature."""
+        usage_fields = ['nutzart', 'Nutzart', 'NUTZART', 'nutzung', 'Nutzung', 'usage', 'type', 'Type', 'art', 'Art']
+        
+        for field_name in usage_fields:
+            if field_name in [field.name() for field in feature.fields()]:
+                value = feature.attribute(field_name)
+                if value and str(value).strip():
+                    return str(value).strip()
+        
+        return None
             
     def on_help_clicked(self):
         """Handle Help button click."""

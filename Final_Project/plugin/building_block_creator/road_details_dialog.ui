@@ -58,7 +58,7 @@
     <item>
      <widget class="QLabel" name="label_usage_layer">
       <property name="text">
-       <string>Usage Layer:</string>
+       <string>Usage Layer: (nutzungFlurstueck)</string>
       </property>
       <property name="font">
        <font>

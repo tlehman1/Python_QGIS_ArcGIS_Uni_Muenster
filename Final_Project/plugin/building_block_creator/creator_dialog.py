@@ -29,10 +29,12 @@ from qgis.PyQt.QtCore import Qt
 from qgis.core import (
     QgsProject, QgsVectorLayer, QgsFeature, QgsGeometry,
     QgsField, QgsFields, QgsWkbTypes, QgsProcessingException,
-    QgsVectorFileWriter, QgsCoordinateReferenceSystem
+    QgsVectorFileWriter, QgsCoordinateReferenceSystem,
+    QgsPointXY, QgsLineString, QgsMultiLineString, QgsPolygon
 )
 from qgis.PyQt.QtCore import QVariant
 import processing
+import math
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'building_block_creator_dialog_creator.ui'))
@@ -57,10 +59,38 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
         self.gemarkungLayerCombo.setFilters(QgsMapLayerProxyModel.PolygonLayer)
         self.usageLayerCombo.setFilters(QgsMapLayerProxyModel.PolygonLayer)
         
-        # Set placeholder text
-        self.communityLayerCombo.setCurrentText("Select layer")
-        self.gemarkungLayerCombo.setCurrentText("Select layer") 
-        self.usageLayerCombo.setCurrentText("Select layer")
+        # Allow null selection (empty field)
+        self.communityLayerCombo.setAllowEmptyLayer(True)
+        self.gemarkungLayerCombo.setAllowEmptyLayer(True)
+        self.usageLayerCombo.setAllowEmptyLayer(True)
+        
+        # Set to empty initially
+        self.communityLayerCombo.setCurrentIndex(-1)
+        self.gemarkungLayerCombo.setCurrentIndex(-1)
+        self.usageLayerCombo.setCurrentIndex(-1)
+        
+        # Auto-select specific layers if they exist
+        self.auto_select_layers()
+    
+    def auto_select_layers(self):
+        """Auto-select layers with specific names if they are loaded."""
+        project = QgsProject.instance()
+        
+        # Define expected layer names
+        expected_layers = {
+            'nutzungFlurstueck': self.usageLayerCombo,
+            'Gemeindegrenzen_KreisGT': self.communityLayerCombo,
+            'Gemarkungsgrenzen_KreisGT': self.gemarkungLayerCombo
+        }
+        
+        # Search through all loaded layers
+        for layer in project.mapLayers().values():
+            layer_name = layer.name()
+            if layer_name in expected_layers:
+                combo_box = expected_layers[layer_name]
+                # Set the layer in the combo box
+                combo_box.setLayer(layer)
+                print(f"Debug: Auto-selected layer '{layer_name}' in combo box")
         
     def accept(self):
         """Process building blocks creation when OK is clicked."""
@@ -112,57 +142,53 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
             )
             
     def create_building_blocks(self, community_layer, gemarkung_layer, usage_layer, output_name, progress=None):
-        """Create building blocks following the logic from Logik.jpeg."""
+        """Create building blocks by subtracting infrastructure from study area."""
         try:
-            # Use the CRS from the community layer
-            crs = community_layer.crs()
+            # Use the CRS from the usage layer
+            crs = usage_layer.crs()
             
             if progress:
-                progress.setLabelText("Step 1: Filtering usage layer for required classes...")
+                progress.setLabelText("Step 1: Creating study area from land use layer...")
                 progress.setValue(10)
                 QtWidgets.QApplication.processEvents()
             
-            # Step 1: Filter usage layer for only required classes (nutzart filtering)
-            filtered_usage_features = []
-            for usage_feature in usage_layer.getFeatures():
-                usage_type = self.get_feature_usage_type(usage_feature)
-                if usage_type is not None:
-                    filtered_usage_features.append(usage_feature)
-            
-            print(f"Debug: Filtered {len(filtered_usage_features)} usage features from {usage_layer.featureCount()} total")
+            # Step 1: Create study area (union of all nutzungFlurstueck features)
+            study_area = self.create_study_area_from_usage(usage_layer)
+            if not study_area:
+                raise QgsProcessingException("Could not create study area from land use layer")
             
             if progress:
-                progress.setLabelText("Step 2: Creating community-gemarkung intersections...")
+                progress.setLabelText("Step 2: Filtering infrastructure features...")
                 progress.setValue(30)
                 QtWidgets.QApplication.processEvents()
             
-            # Step 2: Create intersections between community and gemarkung layers
-            admin_intersections = []
-            for community_feature in community_layer.getFeatures():
-                if progress and progress.wasCanceled():
-                    return None
-                    
-                community_geom = community_feature.geometry()
-                community_name = self.get_feature_name(community_feature)
-                
-                for gemarkung_feature in gemarkung_layer.getFeatures():
-                    gemarkung_geom = gemarkung_feature.geometry()
-                    
-                    if community_geom.intersects(gemarkung_geom):
-                        intersection_geom = community_geom.intersection(gemarkung_geom)
-                        if not intersection_geom.isNull() and not intersection_geom.isEmpty():
-                            gemarkung_name = self.get_feature_name(gemarkung_feature)
-                            admin_intersections.append({
-                                'geometry': intersection_geom,
-                                'community': community_name,
-                                'gemarkung': gemarkung_name
-                            })
+            # Step 2: Filter and union infrastructure features
+            infrastructure_union = self.create_infrastructure_union(usage_layer, progress)
             
-            print(f"Debug: Created {len(admin_intersections)} admin intersections")
+            print(f"Debug: Created infrastructure union from usage layer")
             
             if progress:
-                progress.setLabelText("Step 3: Creating building blocks from intersections...")
-                progress.setValue(50)
+                progress.setLabelText("Step 3: Creating building blocks by subtracting infrastructure...")
+                progress.setValue(60)
+                QtWidgets.QApplication.processEvents()
+            
+            # Step 3: Create building blocks = study area - infrastructure
+            building_blocks = []
+            if infrastructure_union and not infrastructure_union.isEmpty():
+                # Subtract infrastructure from study area
+                remaining_area = study_area.difference(infrastructure_union)
+                if remaining_area and not remaining_area.isEmpty():
+                    # Split multipart geometry into individual blocks
+                    building_blocks = self.split_multipart_geometry(remaining_area)
+            else:
+                # No infrastructure found, entire study area is one block
+                building_blocks = [study_area]
+            
+            print(f"Debug: Created {len(building_blocks)} building blocks")
+            
+            if progress:
+                progress.setLabelText("Step 4: Creating result layer...")
+                progress.setValue(80)
                 QtWidgets.QApplication.processEvents()
             
             # Create result layer
@@ -176,59 +202,32 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
             fields.append(QgsField("block_id", QVariant.Int))
             fields.append(QgsField("community", QVariant.String))
             fields.append(QgsField("gemarkung", QVariant.String))
-            fields.append(QgsField("usage_type", QVariant.String))
             fields.append(QgsField("area_sqm", QVariant.Double))
             
             result_layer.dataProvider().addAttributes(fields)
             result_layer.updateFields()
             result_layer.startEditing()
             
-            # Step 3: Intersect filtered usage features with admin intersections
+            # Add building blocks to result layer
             block_id = 1
-            created_blocks = 0
-            
-            total_combinations = len(admin_intersections) * len(filtered_usage_features)
-            processed = 0
-            
-            for admin_intersection in admin_intersections:
-                if progress and progress.wasCanceled():
-                    return None
+            for block_geom in building_blocks:
+                if block_geom and not block_geom.isNull() and not block_geom.isEmpty():
+                    # Get administrative info
+                    community_name, gemarkung_name = self.get_admin_info_for_block(
+                        block_geom, community_layer, gemarkung_layer
+                    )
                     
-                admin_geom = admin_intersection['geometry']
-                community_name = admin_intersection['community']
-                gemarkung_name = admin_intersection['gemarkung']
-                
-                for usage_feature in filtered_usage_features:
-                    processed += 1
-                    if progress and processed % 10 == 0:  # Update every 10 features
-                        progress_value = 50 + int((processed / total_combinations) * 40)
-                        progress.setValue(progress_value)
-                        progress.setLabelText(f"Creating building blocks... {processed}/{total_combinations}")
-                        QtWidgets.QApplication.processEvents()
+                    area = block_geom.area()
                     
-                    usage_geom = usage_feature.geometry()
-                    usage_type = self.get_feature_usage_type(usage_feature)
+                    new_feature = QgsFeature(result_layer.fields())
+                    new_feature.setGeometry(block_geom)
+                    new_feature.setAttribute("block_id", block_id)
+                    new_feature.setAttribute("community", community_name)
+                    new_feature.setAttribute("gemarkung", gemarkung_name)
+                    new_feature.setAttribute("area_sqm", area)
                     
-                    if admin_geom.intersects(usage_geom):
-                        block_geom = admin_geom.intersection(usage_geom)
-                        
-                        if not block_geom.isNull() and not block_geom.isEmpty():
-                            area = block_geom.area()
-                            
-                            # Create building block feature
-                            new_feature = QgsFeature(result_layer.fields())
-                            new_feature.setGeometry(block_geom)
-                            new_feature.setAttribute("block_id", block_id)
-                            new_feature.setAttribute("community", community_name)
-                            new_feature.setAttribute("gemarkung", gemarkung_name)
-                            new_feature.setAttribute("usage_type", usage_type)
-                            new_feature.setAttribute("area_sqm", area)
-                            
-                            result_layer.dataProvider().addFeature(new_feature)
-                            block_id += 1
-                            created_blocks += 1
-            
-            print(f"Debug: Created {created_blocks} building blocks")
+                    result_layer.dataProvider().addFeature(new_feature)
+                    block_id += 1
             
             if progress:
                 progress.setValue(95)
@@ -249,6 +248,356 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
             if progress:
                 progress.close()
             raise QgsProcessingException(f"Error creating building blocks: {str(e)}")
+    
+    def create_study_area_from_usage(self, usage_layer):
+        """Create the study area as union of all nutzungFlurstueck features."""
+        try:
+            # Create temporary layer with all usage features
+            temp_layer = QgsVectorLayer(f"Polygon?crs={usage_layer.crs().authid()}", "temp_usage", "memory")
+            temp_layer.dataProvider().addAttributes([QgsField("usage_id", QVariant.Int)])
+            temp_layer.updateFields()
+            temp_layer.startEditing()
+            
+            # Add all usage features
+            feature_id = 1
+            for feature in usage_layer.getFeatures():
+                geom = feature.geometry()
+                if geom and not geom.isNull():
+                    new_feature = QgsFeature(temp_layer.fields())
+                    new_feature.setGeometry(geom)
+                    new_feature.setAttribute("usage_id", feature_id)
+                    temp_layer.dataProvider().addFeature(new_feature)
+                    feature_id += 1
+            
+            temp_layer.commitChanges()
+            
+            if temp_layer.featureCount() == 0:
+                return None
+            
+            # Use QGIS processing to create union
+            try:
+                result = processing.run(
+                    "native:dissolve",
+                    {
+                        'INPUT': temp_layer,
+                        'FIELD': [],  # Dissolve all features together
+                        'OUTPUT': 'TEMPORARY_OUTPUT'
+                    }
+                )
+                
+                dissolved_layer = result['OUTPUT']
+                
+                # Get the dissolved geometry
+                dissolved_geometries = []
+                for feature in dissolved_layer.getFeatures():
+                    geom = feature.geometry()
+                    if geom and not geom.isNull():
+                        dissolved_geometries.append(geom)
+                
+                if not dissolved_geometries:
+                    return None
+                
+                # Combine all dissolved parts
+                study_area = dissolved_geometries[0]
+                for geom in dissolved_geometries[1:]:
+                    study_area = study_area.combine(geom)
+                
+                print(f"Debug: Created study area from {temp_layer.featureCount()} nutzungFlurstueck features")
+                return study_area
+                
+            except Exception as e:
+                print(f"Debug: QGIS processing failed, falling back to manual union: {e}")
+                return self.create_study_area_from_usage_fallback(temp_layer)
+            
+        except Exception as e:
+            print(f"Debug: Error creating study area from usage layer: {e}")
+            return None
+    
+    def create_study_area_from_usage_fallback(self, temp_layer):
+        """Fallback method for usage-based study area creation."""
+        try:
+            usage_geometries = []
+            
+            for feature in temp_layer.getFeatures():
+                geom = feature.geometry()
+                if geom and not geom.isNull():
+                    usage_geometries.append(geom)
+            
+            if not usage_geometries:
+                return None
+            
+            study_area = usage_geometries[0]
+            for geom in usage_geometries[1:]:
+                study_area = study_area.combine(geom)
+            
+            print(f"Debug: Created study area using fallback method from {len(usage_geometries)} features")
+            return study_area
+            
+        except Exception as e:
+            print(f"Debug: Error in fallback study area creation: {e}")
+            return None
+    
+    def create_study_area(self, community_layer, gemarkung_layer):
+        """Create the study area as union of administrative boundaries using QGIS processing."""
+        try:
+            # Create temporary layer with all administrative features
+            temp_layer = QgsVectorLayer(f"Polygon?crs={community_layer.crs().authid()}", "temp_admin", "memory")
+            temp_layer.dataProvider().addAttributes([QgsField("source", QVariant.String)])
+            temp_layer.updateFields()
+            temp_layer.startEditing()
+            
+            # Add all community features
+            for feature in community_layer.getFeatures():
+                geom = feature.geometry()
+                if geom and not geom.isNull():
+                    new_feature = QgsFeature(temp_layer.fields())
+                    new_feature.setGeometry(geom)
+                    new_feature.setAttribute("source", "community")
+                    temp_layer.dataProvider().addFeature(new_feature)
+            
+            # Add all gemarkung features
+            for feature in gemarkung_layer.getFeatures():
+                geom = feature.geometry()
+                if geom and not geom.isNull():
+                    new_feature = QgsFeature(temp_layer.fields())
+                    new_feature.setGeometry(geom)
+                    new_feature.setAttribute("source", "gemarkung")
+                    temp_layer.dataProvider().addFeature(new_feature)
+            
+            temp_layer.commitChanges()
+            
+            if temp_layer.featureCount() == 0:
+                return None
+            
+            # Use QGIS processing to create union
+            result = processing.run(
+                "native:union",
+                {
+                    'INPUT': temp_layer,
+                    'OVERLAY': None,
+                    'OUTPUT': 'TEMPORARY_OUTPUT'
+                }
+            )
+            
+            union_layer = result['OUTPUT']
+            
+            # Get the union geometry
+            union_geometries = []
+            for feature in union_layer.getFeatures():
+                geom = feature.geometry()
+                if geom and not geom.isNull():
+                    union_geometries.append(geom)
+            
+            if not union_geometries:
+                return None
+            
+            # Combine all union parts
+            study_area = union_geometries[0]
+            for geom in union_geometries[1:]:
+                study_area = study_area.combine(geom)
+            
+            print(f"Debug: Created study area using QGIS processing with {len(union_geometries)} parts")
+            return study_area
+            
+        except Exception as e:
+            print(f"Debug: QGIS processing failed, falling back to manual union: {e}")
+            # Fallback to simple approach
+            return self.create_study_area_fallback(community_layer, gemarkung_layer)
+    
+    def create_study_area_fallback(self, community_layer, gemarkung_layer):
+        """Fallback method for study area creation."""
+        try:
+            study_geometries = []
+            
+            for feature in community_layer.getFeatures():
+                geom = feature.geometry()
+                if geom and not geom.isNull():
+                    study_geometries.append(geom)
+            
+            for feature in gemarkung_layer.getFeatures():
+                geom = feature.geometry()
+                if geom and not geom.isNull():
+                    study_geometries.append(geom)
+            
+            if not study_geometries:
+                return None
+            
+            study_area = study_geometries[0]
+            for geom in study_geometries[1:]:
+                study_area = study_area.combine(geom)
+            
+            return study_area
+            
+        except Exception as e:
+            print(f"Debug: Error in fallback study area creation: {e}")
+            return None
+    
+    def create_infrastructure_union(self, usage_layer, progress=None):
+        """Create union of all filtered infrastructure features using QGIS processing."""
+        try:
+            # Create temporary layer with filtered infrastructure features
+            temp_layer = QgsVectorLayer(f"Polygon?crs={usage_layer.crs().authid()}", "temp_infrastructure", "memory")
+            temp_layer.dataProvider().addAttributes([QgsField("usage_type", QVariant.String)])
+            temp_layer.updateFields()
+            temp_layer.startEditing()
+            
+            # First pass: Filter and collect infrastructure features
+            total_features = usage_layer.featureCount()
+            processed = 0
+            infrastructure_count = 0
+            
+            for usage_feature in usage_layer.getFeatures():
+                processed += 1
+                if progress and processed % 100 == 0:  # Update every 100 features
+                    progress_value = 30 + int((processed / total_features) * 15)  # 30-45%
+                    progress.setValue(progress_value)
+                    progress.setLabelText(f"Filtering infrastructure... {processed}/{total_features}")
+                    QtWidgets.QApplication.processEvents()
+                
+                usage_type = self.get_feature_usage_type(usage_feature)
+                if usage_type is not None:  # This feature is infrastructure
+                    geom = usage_feature.geometry()
+                    if geom and not geom.isNull():
+                        # Add to temporary layer
+                        new_feature = QgsFeature(temp_layer.fields())
+                        new_feature.setGeometry(geom)
+                        new_feature.setAttribute("usage_type", usage_type)
+                        temp_layer.dataProvider().addFeature(new_feature)
+                        infrastructure_count += 1
+            
+            temp_layer.commitChanges()
+            
+            print(f"Debug: Found {infrastructure_count} infrastructure features out of {total_features} total")
+            
+            if infrastructure_count == 0:
+                return None
+            
+            if progress:
+                progress.setValue(45)
+                progress.setLabelText(f"Creating union of {infrastructure_count} infrastructure features using QGIS processing...")
+                QtWidgets.QApplication.processEvents()
+            
+            # Use QGIS processing to create union - much faster than manual combine
+            try:
+                result = processing.run(
+                    "native:dissolve",
+                    {
+                        'INPUT': temp_layer,
+                        'FIELD': [],  # Dissolve all features together
+                        'OUTPUT': 'TEMPORARY_OUTPUT'
+                    }
+                )
+                
+                dissolved_layer = result['OUTPUT']
+                
+                # Get the dissolved geometry
+                dissolved_geometries = []
+                for feature in dissolved_layer.getFeatures():
+                    geom = feature.geometry()
+                    if geom and not geom.isNull():
+                        dissolved_geometries.append(geom)
+                
+                if not dissolved_geometries:
+                    return None
+                
+                # Combine all dissolved parts
+                infrastructure_union = dissolved_geometries[0]
+                for geom in dissolved_geometries[1:]:
+                    infrastructure_union = infrastructure_union.combine(geom)
+                
+                if progress:
+                    progress.setValue(60)
+                    progress.setLabelText("Infrastructure union completed")
+                    QtWidgets.QApplication.processEvents()
+                
+                return infrastructure_union
+                
+            except Exception as e:
+                print(f"Debug: QGIS processing failed, falling back to manual union: {e}")
+                return self.create_infrastructure_union_fallback(temp_layer, progress)
+            
+        except Exception as e:
+            print(f"Debug: Error creating infrastructure union: {e}")
+            return None
+    
+    def create_infrastructure_union_fallback(self, temp_layer, progress=None):
+        """Fallback method for infrastructure union creation."""
+        try:
+            infrastructure_geometries = []
+            
+            for feature in temp_layer.getFeatures():
+                geom = feature.geometry()
+                if geom and not geom.isNull():
+                    infrastructure_geometries.append(geom)
+            
+            if not infrastructure_geometries:
+                return None
+            
+            # Manual union as fallback
+            infrastructure_union = infrastructure_geometries[0]
+            for i, geom in enumerate(infrastructure_geometries[1:], 1):
+                if progress and i % 10 == 0:
+                    progress_value = 45 + int((i / len(infrastructure_geometries)) * 15)
+                    progress.setValue(progress_value)
+                    progress.setLabelText(f"Manual unioning... {i}/{len(infrastructure_geometries)}")
+                    QtWidgets.QApplication.processEvents()
+                
+                infrastructure_union = infrastructure_union.combine(geom)
+            
+            return infrastructure_union
+            
+        except Exception as e:
+            print(f"Debug: Error in fallback infrastructure union: {e}")
+            return None
+    
+    def split_multipart_geometry(self, geometry):
+        """Split a potentially multipart geometry into individual parts."""
+        parts = []
+        
+        try:
+            if geometry.isMultipart():
+                # Handle multipart geometry
+                if geometry.type() == QgsWkbTypes.PolygonGeometry:
+                    multipolygon = geometry.asMultiPolygon()
+                    for polygon in multipolygon:
+                        if polygon:
+                            single_geom = QgsGeometry.fromPolygonXY(polygon)
+                            if single_geom and not single_geom.isEmpty():
+                                parts.append(single_geom)
+            else:
+                # Single part geometry
+                if geometry and not geometry.isEmpty():
+                    parts.append(geometry)
+                    
+        except Exception as e:
+            print(f"Debug: Error splitting multipart geometry: {e}")
+            if geometry and not geometry.isEmpty():
+                parts.append(geometry)  # Fallback: use original geometry
+                
+        return parts
+    
+    def get_admin_info_for_block(self, block_geom, community_layer, gemarkung_layer):
+        """Get administrative information for a building block."""
+        community_name = "Unknown"
+        gemarkung_name = "Unknown"
+        
+        try:
+            # Find intersecting community
+            for feature in community_layer.getFeatures():
+                if feature.geometry().intersects(block_geom):
+                    community_name = self.get_feature_name(feature)
+                    break
+            
+            # Find intersecting gemarkung
+            for feature in gemarkung_layer.getFeatures():
+                if feature.geometry().intersects(block_geom):
+                    gemarkung_name = self.get_feature_name(feature)
+                    break
+                    
+        except Exception as e:
+            print(f"Debug: Error getting admin info: {e}")
+            
+        return community_name, gemarkung_name
             
     def get_feature_name(self, feature):
         """Extract a name from a feature, trying common field names."""
@@ -302,6 +651,247 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
         print("Debug: No matching usage field found or no matching value")
         return None  # Return None for features that don't match our filter
         
+    def compute_polygon_centerlines(self, polygon_geom):
+        """Compute skeleton (medial axis) for a polygon using QGIS processing."""
+        skeleton_lines = []
+        
+        try:
+            # Use QGIS processing to compute the polygon skeleton
+            result = processing.run(
+                "qgis:polygonskeleton",
+                {
+                    'INPUT': polygon_geom,
+                    'OUTPUT': 'TEMPORARY_OUTPUT'
+                }
+            )
+            
+            # Extract skeleton lines from the result
+            skeleton_layer = result['OUTPUT']
+            for feature in skeleton_layer.getFeatures():
+                skeleton_geom = feature.geometry()
+                if skeleton_geom and not skeleton_geom.isNull():
+                    skeleton_lines.append(skeleton_geom)
+                    
+        except Exception as e:
+            print(f"Debug: QGIS skeleton algorithm failed: {e}")
+            # Fallback to simple approximation
+            skeleton_lines = self.compute_skeleton_fallback(polygon_geom)
+            
+        return skeleton_lines
+    
+    def compute_skeleton_fallback(self, polygon_geom):
+        """Fallback skeleton computation using Voronoi diagram approach."""
+        skeleton_lines = []
+        
+        try:
+            # Create a dense point sampling along the polygon boundary
+            boundary_points = self.sample_polygon_boundary(polygon_geom, sample_distance=10.0)
+            
+            if len(boundary_points) < 3:
+                return skeleton_lines
+            
+            # Create Voronoi diagram from boundary points
+            voronoi_result = processing.run(
+                "qgis:voronoipolygons",
+                {
+                    'INPUT': boundary_points,
+                    'BUFFER': 0,
+                    'OUTPUT': 'TEMPORARY_OUTPUT'
+                }
+            )
+            
+            # Extract Voronoi edges that are inside the original polygon
+            voronoi_layer = voronoi_result['OUTPUT']
+            for feature in voronoi_layer.getFeatures():
+                voronoi_geom = feature.geometry()
+                
+                # Get the boundary of each Voronoi polygon
+                boundary = voronoi_geom.boundary()
+                
+                # Check which parts are inside the original polygon
+                if polygon_geom.contains(boundary.centroid()):
+                    # Extract line segments that form the skeleton
+                    intersection = boundary.intersection(polygon_geom)
+                    if intersection and not intersection.isEmpty():
+                        if intersection.type() == QgsWkbTypes.LineGeometry:
+                            skeleton_lines.append(intersection)
+                            
+        except Exception as e:
+            print(f"Debug: Voronoi fallback failed: {e}")
+            # Final fallback: simple centerline approximation
+            skeleton_lines = self.simple_centerline_fallback(polygon_geom)
+            
+        return skeleton_lines
+    
+    def sample_polygon_boundary(self, polygon_geom, sample_distance=10.0):
+        """Create a point layer with densely sampled points along polygon boundary."""
+        try:
+            # Create temporary point layer
+            point_layer = QgsVectorLayer("Point?crs=EPSG:4326", "boundary_points", "memory")
+            point_layer.dataProvider().addAttributes([QgsField("id", QVariant.Int)])
+            point_layer.updateFields()
+            point_layer.startEditing()
+            
+            # Get the boundary of the polygon
+            boundary = polygon_geom.boundary()
+            
+            # Sample points along the boundary
+            length = boundary.length()
+            num_points = int(length / sample_distance)
+            
+            point_id = 0
+            for i in range(num_points):
+                distance = (i * length) / num_points
+                point = boundary.interpolate(distance)
+                
+                if point and not point.isEmpty():
+                    feature = QgsFeature(point_layer.fields())
+                    feature.setGeometry(point)
+                    feature.setAttribute("id", point_id)
+                    point_layer.dataProvider().addFeature(feature)
+                    point_id += 1
+            
+            point_layer.commitChanges()
+            return point_layer
+            
+        except Exception as e:
+            print(f"Debug: Error sampling boundary: {e}")
+            return None
+    
+    def simple_centerline_fallback(self, polygon_geom):
+        """Simple fallback: create basic centerline approximation."""
+        centerlines = []
+        
+        try:
+            if polygon_geom.isMultipart():
+                multipolygon = polygon_geom.asMultiPolygon()
+                for polygon in multipolygon:
+                    if polygon:
+                        exterior_ring = polygon[0]
+                        centerline = self.compute_ring_centerline(exterior_ring)
+                        if centerline:
+                            centerlines.append(centerline)
+            else:
+                polygon = polygon_geom.asPolygon()
+                if polygon:
+                    exterior_ring = polygon[0]
+                    centerline = self.compute_ring_centerline(exterior_ring)
+                    if centerline:
+                        centerlines.append(centerline)
+                        
+        except Exception as e:
+            print(f"Debug: Error in simple centerline fallback: {e}")
+            
+        return centerlines
+    
+    def compute_ring_centerline(self, ring_points):
+        """Compute a simplified centerline from a polygon ring."""
+        if len(ring_points) < 4:
+            return None
+            
+        try:
+            # Find bounding box
+            min_x = min(pt.x() for pt in ring_points)
+            max_x = max(pt.x() for pt in ring_points)
+            min_y = min(pt.y() for pt in ring_points)
+            max_y = max(pt.y() for pt in ring_points)
+            
+            center_x = (min_x + max_x) / 2
+            center_y = (min_y + max_y) / 2
+            
+            # Find the two points that are furthest apart
+            max_distance = 0
+            point1 = None
+            point2 = None
+            
+            for i, pt1 in enumerate(ring_points[:-1]):
+                for j, pt2 in enumerate(ring_points[i+1:-1], i+1):
+                    distance = pt1.distance(pt2)
+                    if distance > max_distance:
+                        max_distance = distance
+                        point1 = pt1
+                        point2 = pt2
+            
+            if point1 and point2:
+                line_geom = QgsGeometry.fromPolylineXY([point1, point2])
+                return line_geom
+            else:
+                # Fallback
+                fallback_point1 = QgsPointXY(center_x - 1, center_y)
+                fallback_point2 = QgsPointXY(center_x + 1, center_y)
+                line_geom = QgsGeometry.fromPolylineXY([fallback_point1, fallback_point2])
+                return line_geom
+                
+        except Exception as e:
+            print(f"Debug: Error in compute_ring_centerline: {e}")
+            return None
+    
+    def extend_line(self, line_geom, extension_distance):
+        """Extend a line geometry by the specified distance at both ends."""
+        if not line_geom or line_geom.isNull():
+            return line_geom
+            
+        try:
+            # Get the line points
+            line_points = line_geom.asPolyline()
+            if len(line_points) < 2:
+                return line_geom
+            
+            start_point = line_points[0]
+            end_point = line_points[-1]
+            
+            # Calculate direction vectors
+            # Direction from second point to first (for extending backwards)
+            if len(line_points) >= 2:
+                second_point = line_points[1]
+                start_dx = start_point.x() - second_point.x()
+                start_dy = start_point.y() - second_point.y()
+                start_length = math.sqrt(start_dx*start_dx + start_dy*start_dy)
+                
+                if start_length > 0:
+                    # Normalize and extend
+                    start_dx /= start_length
+                    start_dy /= start_length
+                    extended_start = QgsPointXY(
+                        start_point.x() + start_dx * extension_distance,
+                        start_point.y() + start_dy * extension_distance
+                    )
+                else:
+                    extended_start = start_point
+            else:
+                extended_start = start_point
+            
+            # Direction from second-to-last point to last (for extending forwards)
+            if len(line_points) >= 2:
+                second_last_point = line_points[-2]
+                end_dx = end_point.x() - second_last_point.x()
+                end_dy = end_point.y() - second_last_point.y()
+                end_length = math.sqrt(end_dx*end_dx + end_dy*end_dy)
+                
+                if end_length > 0:
+                    # Normalize and extend
+                    end_dx /= end_length
+                    end_dy /= end_length
+                    extended_end = QgsPointXY(
+                        end_point.x() + end_dx * extension_distance,
+                        end_point.y() + end_dy * extension_distance
+                    )
+                else:
+                    extended_end = end_point
+            else:
+                extended_end = end_point
+            
+            # Create extended line
+            extended_points = [extended_start] + line_points + [extended_end]
+            extended_line = QgsGeometry.fromPolylineXY(extended_points)
+            
+            return extended_line
+            
+        except Exception as e:
+            print(f"Debug: Error extending line: {e}")
+            return line_geom
+    
+
     def on_help_clicked(self):
         """Handle Help button click."""
         try:
