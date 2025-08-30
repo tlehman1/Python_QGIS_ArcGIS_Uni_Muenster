@@ -289,15 +289,55 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
                 
                 gemarkung_lines_layer = self.convert_gemarkung_to_lines(gemarkung_layer, progress)
             
-            # Intersect filtered lines with Gemarkung boundaries
+            # Union filtered lines with Gemarkung boundaries
             final_lines_layer = None
             if filtered_lines_layer and gemarkung_lines_layer:
                 if progress:
                     progress.setValue(99)
-                    progress.setLabelText("Intersecting lines with Gemarkung boundaries...")
+                    progress.setLabelText("Creating union with Gemarkung boundaries...")
                     QtWidgets.QApplication.processEvents()
                 
                 final_lines_layer = self.intersect_with_boundaries(filtered_lines_layer, gemarkung_lines_layer, progress)
+            
+            # Polygonize the union result to create polygons
+            polygons_layer = None
+            if final_lines_layer:
+                if progress:
+                    progress.setValue(99)
+                    progress.setLabelText("Creating polygons from lines...")
+                    QtWidgets.QApplication.processEvents()
+                
+                polygons_layer = self.polygonize_lines(final_lines_layer, progress)
+            
+            # Convert multipart polygons to single parts
+            single_parts_layer = None
+            if polygons_layer:
+                if progress:
+                    progress.setValue(99)
+                    progress.setLabelText("Converting multipart to single parts...")
+                    QtWidgets.QApplication.processEvents()
+                
+                single_parts_layer = self.multipart_to_single_parts(polygons_layer, progress)
+            
+            # Select small polygons (< 1000 m²)
+            small_polygons_layer = None
+            if single_parts_layer:
+                if progress:
+                    progress.setValue(99)
+                    progress.setLabelText("Selecting small polygons (< 1000 m²)...")
+                    QtWidgets.QApplication.processEvents()
+                
+                small_polygons_layer = self.select_small_polygons(single_parts_layer, progress)
+            
+            # Eliminate selected small polygons (merge with neighboring polygons)
+            final_building_blocks_layer = None
+            if single_parts_layer and small_polygons_layer:
+                if progress:
+                    progress.setValue(99)
+                    progress.setLabelText("Eliminating small polygons...")
+                    QtWidgets.QApplication.processEvents()
+                
+                final_building_blocks_layer = self.eliminate_small_polygons(single_parts_layer, small_polygons_layer, progress)
             
             if progress:
                 progress.setValue(99)
@@ -308,9 +348,25 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
             if gemarkung_lines_layer:
                 QgsProject.instance().addMapLayer(gemarkung_lines_layer)
             
-            # Add the intersection of filtered lines with Gemarkung boundaries as second result
+            # Add the union of filtered lines with Gemarkung boundaries as second result
             if final_lines_layer:
                 QgsProject.instance().addMapLayer(final_lines_layer)
+            
+            # Add the polygonized result as third result
+            if polygons_layer:
+                QgsProject.instance().addMapLayer(polygons_layer)
+            
+            # Add the single parts result as fourth result
+            if single_parts_layer:
+                QgsProject.instance().addMapLayer(single_parts_layer)
+            
+            # Add the small polygons result as fifth result
+            if small_polygons_layer:
+                QgsProject.instance().addMapLayer(small_polygons_layer)
+            
+            # Add the final building blocks result as sixth result (with small polygons eliminated)
+            if final_building_blocks_layer:
+                QgsProject.instance().addMapLayer(final_building_blocks_layer)
             
             # Add the dissolved union as third result (single merged geometry)
             dissolved_union_single = None
@@ -1064,58 +1120,58 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
             return None
     
     def intersect_with_boundaries(self, lines_layer, boundary_lines_layer, progress=None):
-        """Intersect filtered lines with boundary lines using QGIS processing."""
+        """Union filtered lines with boundary lines using QGIS processing."""
         try:
             if progress:
                 progress.setValue(99)
-                progress.setLabelText("Intersecting lines with boundaries...")
+                progress.setLabelText("Creating union with boundaries...")
                 QtWidgets.QApplication.processEvents()
             
-            # Use QGIS processing to intersect lines with boundaries
+            # Use QGIS processing to union lines with boundaries
             result = processing.run(
-                "native:lineintersections",
+                "native:union",
                 {
                     'INPUT': lines_layer,  # Filtered lines
-                    'INTERSECT': boundary_lines_layer,  # Gemarkung boundary lines
-                    'INPUT_FIELDS': [],  # Keep all fields from input
-                    'INTERSECT_FIELDS': [],  # Keep all fields from intersect layer
+                    'OVERLAY': boundary_lines_layer,  # Gemarkung boundary lines
                     'OUTPUT': 'TEMPORARY_OUTPUT'
                 }
             )
             
-            intersect_temp_layer = result['OUTPUT']
+            union_temp_layer = result['OUTPUT']
             
-            # Create a properly named memory layer and copy the results
-            intersect_layer = QgsVectorLayer(f"Point?crs={lines_layer.crs().authid()}", "building_blocks_intersections", "memory")
+            # Create a properly named memory layer with unique timestamp
+            import time
+            timestamp = int(time.time())
+            unique_layer_name = f"building_blocks_union_{timestamp}"
+            union_layer = QgsVectorLayer(f"LineString?crs={lines_layer.crs().authid()}", unique_layer_name, "memory")
             
             # Copy fields from the processing result
-            intersect_layer.dataProvider().addAttributes(intersect_temp_layer.fields())
-            intersect_layer.updateFields()
-            intersect_layer.startEditing()
+            union_layer.dataProvider().addAttributes(union_temp_layer.fields())
+            union_layer.updateFields()
+            union_layer.startEditing()
             
             # Copy all features from processing result
-            for feature in intersect_temp_layer.getFeatures():
-                intersect_layer.dataProvider().addFeature(feature)
+            for feature in union_temp_layer.getFeatures():
+                union_layer.dataProvider().addFeature(feature)
             
-            intersect_layer.commitChanges()
-            intersect_layer.updateExtents()
+            union_layer.commitChanges()
+            union_layer.updateExtents()
             
-            # Style the intersection points with a distinct style
-            from qgis.core import QgsMarkerSymbol
-            symbol = QgsMarkerSymbol.createSimple({
+            # Style the union lines with a distinct style
+            from qgis.core import QgsLineSymbol
+            symbol = QgsLineSymbol.createSimple({
                 'color': 'yellow',
-                'size': '3',
-                'outline_color': 'black',
-                'outline_width': '1'
+                'width': '2.5',
+                'line_style': 'solid'
             })
-            intersect_layer.renderer().setSymbol(symbol)
+            union_layer.renderer().setSymbol(symbol)
             
-            print(f"Debug: Created {intersect_layer.featureCount()} intersection points with boundaries")
+            print(f"Debug: Created {union_layer.featureCount()} union features with boundaries")
             
-            return intersect_layer
+            return union_layer
             
         except Exception as e:
-            print(f"Debug: QGIS line intersection failed: {e}")
+            print(f"Debug: QGIS line union failed: {e}")
             return None
     
     def convert_gemarkung_to_lines(self, gemarkung_layer, progress=None):
@@ -2072,6 +2128,245 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
             print(f"Debug: Error extending line: {e}")
             return line_geom
     
+    def polygonize_lines(self, lines_layer, progress=None):
+        """Convert lines to polygons using QGIS polygonize processing."""
+        try:
+            if progress:
+                progress.setValue(99)
+                progress.setLabelText("Polygonizing lines...")
+                QtWidgets.QApplication.processEvents()
+            
+            # Use QGIS processing to polygonize lines
+            result = processing.run(
+                "native:polygonize",
+                {
+                    'INPUT': lines_layer,  # Input lines layer
+                    'KEEP_FIELDS': False,  # Don't keep fields from original lines
+                    'OUTPUT': 'TEMPORARY_OUTPUT'
+                }
+            )
+            
+            polygonize_temp_layer = result['OUTPUT']
+            
+            # Create a properly named memory layer with unique timestamp
+            import time
+            timestamp = int(time.time())
+            unique_layer_name = f"building_blocks_polygons_{timestamp}"
+            polygons_layer = QgsVectorLayer(f"Polygon?crs={lines_layer.crs().authid()}", unique_layer_name, "memory")
+            
+            # Copy fields from the processing result
+            polygons_layer.dataProvider().addAttributes(polygonize_temp_layer.fields())
+            polygons_layer.updateFields()
+            polygons_layer.startEditing()
+            
+            # Copy all features from processing result
+            for feature in polygonize_temp_layer.getFeatures():
+                polygons_layer.dataProvider().addFeature(feature)
+            
+            polygons_layer.commitChanges()
+            polygons_layer.updateExtents()
+            
+            # Style the polygons layer with a distinct style
+            from qgis.core import QgsFillSymbol
+            symbol = QgsFillSymbol.createSimple({
+                'color': '0,255,255,60',  # Light cyan with transparency
+                'color_border': 'darkblue',
+                'width_border': '1.0',
+                'style': 'diagonal_x'
+            })
+            polygons_layer.renderer().setSymbol(symbol)
+            
+            print(f"Debug: Created {polygons_layer.featureCount()} polygons from lines")
+            
+            return polygons_layer
+            
+        except Exception as e:
+            print(f"Debug: QGIS polygonize failed: {e}")
+            return None
+    
+    def multipart_to_single_parts(self, polygons_layer, progress=None):
+        """Convert multipart polygons to single parts using QGIS processing."""
+        try:
+            if progress:
+                progress.setValue(99)
+                progress.setLabelText("Converting multipart to single parts...")
+                QtWidgets.QApplication.processEvents()
+            
+            # Use QGIS processing to convert multipart to single parts
+            result = processing.run(
+                "native:multiparttosingleparts",
+                {
+                    'INPUT': polygons_layer,  # Input polygons layer
+                    'OUTPUT': 'TEMPORARY_OUTPUT'
+                }
+            )
+            
+            single_parts_temp_layer = result['OUTPUT']
+            
+            # Create a properly named memory layer with unique timestamp
+            import time
+            timestamp = int(time.time())
+            unique_layer_name = f"building_blocks_single_parts_{timestamp}"
+            single_parts_layer = QgsVectorLayer(f"Polygon?crs={polygons_layer.crs().authid()}", unique_layer_name, "memory")
+            
+            # Copy fields from the processing result
+            single_parts_layer.dataProvider().addAttributes(single_parts_temp_layer.fields())
+            single_parts_layer.updateFields()
+            single_parts_layer.startEditing()
+            
+            # Copy all features from processing result
+            for feature in single_parts_temp_layer.getFeatures():
+                single_parts_layer.dataProvider().addFeature(feature)
+            
+            single_parts_layer.commitChanges()
+            single_parts_layer.updateExtents()
+            
+            # Style the single parts layer with a distinct style
+            from qgis.core import QgsFillSymbol
+            symbol = QgsFillSymbol.createSimple({
+                'color': '255,192,203,80',  # Light pink with transparency
+                'color_border': 'purple',
+                'width_border': '1.2',
+                'style': 'solid'
+            })
+            single_parts_layer.renderer().setSymbol(symbol)
+            
+            print(f"Debug: Converted {polygons_layer.featureCount()} polygons to {single_parts_layer.featureCount()} single parts")
+            
+            return single_parts_layer
+            
+        except Exception as e:
+            print(f"Debug: QGIS multipart to single parts failed: {e}")
+            return None
+    
+    def select_small_polygons(self, single_parts_layer, progress=None):
+        """Select and extract small polygons (< 1000 m²) using QGIS processing."""
+        try:
+            if progress:
+                progress.setValue(99)
+                progress.setLabelText("Selecting small polygons...")
+                QtWidgets.QApplication.processEvents()
+            
+            # Use QGIS processing to select features by expression
+            result = processing.run(
+                "native:extractbyexpression",
+                {
+                    'INPUT': single_parts_layer,  # Input single parts layer
+                    'EXPRESSION': '$area < 1000',  # Select polygons with area < 1000 m²
+                    'OUTPUT': 'TEMPORARY_OUTPUT'
+                }
+            )
+            
+            small_polygons_temp_layer = result['OUTPUT']
+            
+            # Create a properly named memory layer with unique timestamp
+            import time
+            timestamp = int(time.time())
+            unique_layer_name = f"building_blocks_small_polygons_{timestamp}"
+            small_polygons_layer = QgsVectorLayer(f"Polygon?crs={single_parts_layer.crs().authid()}", unique_layer_name, "memory")
+            
+            # Copy fields from the processing result
+            small_polygons_layer.dataProvider().addAttributes(small_polygons_temp_layer.fields())
+            small_polygons_layer.updateFields()
+            small_polygons_layer.startEditing()
+            
+            # Copy all features from processing result
+            for feature in small_polygons_temp_layer.getFeatures():
+                small_polygons_layer.dataProvider().addFeature(feature)
+            
+            small_polygons_layer.commitChanges()
+            small_polygons_layer.updateExtents()
+            
+            # Style the small polygons layer with a distinct style
+            from qgis.core import QgsFillSymbol
+            symbol = QgsFillSymbol.createSimple({
+                'color': '255,0,0,100',  # Red with transparency to highlight small polygons
+                'color_border': 'darkred',
+                'width_border': '1.5',
+                'style': 'dense4'  # Dense pattern to make them stand out
+            })
+            small_polygons_layer.renderer().setSymbol(symbol)
+            
+            print(f"Debug: Selected {small_polygons_layer.featureCount()} small polygons (< 1000 m²) from {single_parts_layer.featureCount()} total polygons")
+            
+            return small_polygons_layer
+            
+        except Exception as e:
+            print(f"Debug: QGIS select small polygons failed: {e}")
+            return None
+    
+    def eliminate_small_polygons(self, single_parts_layer, small_polygons_layer, progress=None):
+        """Eliminate small polygons by merging them with neighboring larger polygons using QGIS processing."""
+        try:
+            if progress:
+                progress.setValue(99)
+                progress.setLabelText("Eliminating small polygons...")
+                QtWidgets.QApplication.processEvents()
+            
+            # First, we need to create a layer with the small polygons selected
+            # Create a temporary layer based on single_parts_layer
+            temp_layer = QgsVectorLayer(f"Polygon?crs={single_parts_layer.crs().authid()}", "temp_for_elimination", "memory")
+            temp_layer.dataProvider().addAttributes(single_parts_layer.fields())
+            temp_layer.updateFields()
+            temp_layer.startEditing()
+            
+            # Copy all features from single_parts_layer
+            for feature in single_parts_layer.getFeatures():
+                temp_layer.dataProvider().addFeature(feature)
+            
+            temp_layer.commitChanges()
+            temp_layer.updateExtents()
+            
+            # Select features that are small (< 1000 m²) in the temp layer
+            temp_layer.selectByExpression('$area < 1000')
+            
+            # Use QGIS processing to eliminate selected polygons
+            result = processing.run(
+                "qgis:eliminateselectedpolygons",
+                {
+                    'INPUT': temp_layer,  # Input layer with small polygons selected
+                    'MODE': 2,  # Mode 2: Largest common boundary (most common choice)
+                    'OUTPUT': 'TEMPORARY_OUTPUT'
+                }
+            )
+            
+            eliminated_temp_layer = result['OUTPUT']
+            
+            # Create a properly named memory layer with unique timestamp
+            import time
+            timestamp = int(time.time())
+            unique_layer_name = f"building_blocks_final_{timestamp}"
+            final_layer = QgsVectorLayer(f"Polygon?crs={single_parts_layer.crs().authid()}", unique_layer_name, "memory")
+            
+            # Copy fields from the processing result
+            final_layer.dataProvider().addAttributes(eliminated_temp_layer.fields())
+            final_layer.updateFields()
+            final_layer.startEditing()
+            
+            # Copy all features from processing result
+            for feature in eliminated_temp_layer.getFeatures():
+                final_layer.dataProvider().addFeature(feature)
+            
+            final_layer.commitChanges()
+            final_layer.updateExtents()
+            
+            # Style the final layer with a distinct style
+            from qgis.core import QgsFillSymbol
+            symbol = QgsFillSymbol.createSimple({
+                'color': '0,255,0,80',  # Green with transparency for final result
+                'color_border': 'darkgreen',
+                'width_border': '2.0',
+                'style': 'solid'
+            })
+            final_layer.renderer().setSymbol(symbol)
+            
+            print(f"Debug: Eliminated small polygons. Final result has {final_layer.featureCount()} building blocks (reduced from {single_parts_layer.featureCount()})")
+            
+            return final_layer
+            
+        except Exception as e:
+            print(f"Debug: QGIS eliminate selected polygons failed: {e}")
+            return None
 
     def on_help_clicked(self):
         """Handle Help button click."""
