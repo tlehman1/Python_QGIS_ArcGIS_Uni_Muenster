@@ -1,10 +1,10 @@
 Alle Inputs aus den Nutzungsarten zu einer großen Geometrie vereinen
 
-Geometrie negativ um 2.5 Meter buffern
+Geometrie negativ um 2 Meter buffern
 
 Stützpunkte extrahieren
 
-Stützpunkte mit 12 Metern Buffern
+Stützpunkte mit 5 Metern Buffern
 
 Buffer Vereinigen
 
@@ -18,9 +18,15 @@ Linien Exploden
 
 Anfangsgeometrie um 10 Meter buffern
 
+10 Meter Buffer Ergebnis verschmelzen
+
 Linien filtern nach denen die innerhalb der gebufferten Geometrie liegen
 
+Andere Grenzen zu Linien machen
+
 Verschneiden mit anderen Grenzen
+
+Verschmelzen mit anderen Grenzen
 
 Polygonbildung
 
