@@ -158,6 +158,10 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
                             
                         usage_type = self.get_feature_usage_type(usage_feature)
                         
+                        # Skip if usage type is not in our allowed list
+                        if usage_type is None:
+                            continue
+                        
                         # Create the building block geometry
                         block_geom = intersection_geom.intersection(usage_geom)
                         
@@ -201,16 +205,31 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
         return f"Feature_{feature.id()}"
         
     def get_feature_usage_type(self, feature):
-        """Extract usage type from a feature."""
-        usage_fields = ['nutzung', 'Nutzung', 'usage', 'type', 'Type', 'art', 'Art']
+        """Extract usage type from a feature and filter for specific types."""
+        # Define the allowed usage types (Nutzart values)
+        allowed_usage_types = {
+            'Bahnverkehr',
+            'Begleitfläche Bahnverkehr', 
+            'Fließgewässer',
+            'Stehendes Gewässer',
+            'Stehendes Gewässer, nicht ständig Wasserführend mit PNR 1106',
+            'Straßenverkehr',
+            'Verkehrsbegleitfläche Straße',
+            'Weg'
+        }
+        
+        usage_fields = ['nutzart', 'Nutzart', 'NUTZART', 'nutzung', 'Nutzung', 'usage', 'type', 'Type', 'art', 'Art']
         
         for field_name in usage_fields:
             if field_name in [field.name() for field in feature.fields()]:
                 value = feature.attribute(field_name)
                 if value and str(value).strip():
-                    return str(value)
+                    usage_value = str(value).strip().lower()
+                    # Check if the usage type is in our allowed list
+                    if usage_value in allowed_usage_types:
+                        return str(value)
                     
-        return "Unknown"
+        return None  # Return None for features that don't match our filter
         
     def on_help_clicked(self):
         """Handle Help button click."""
