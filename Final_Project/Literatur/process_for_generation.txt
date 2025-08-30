@@ -18,7 +18,7 @@ Linien Exploden
 
 Anfangsgeometrie um 10 Meter buffern
 
-10 Meter Buffer Ergebnis verschmelzen
+Dissolve den 10 Meter Buffer
 
 Linien filtern nach denen die innerhalb der gebufferten Geometrie liegen
 
