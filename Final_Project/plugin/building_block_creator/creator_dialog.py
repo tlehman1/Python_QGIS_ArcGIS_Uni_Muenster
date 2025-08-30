@@ -93,44 +93,31 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
                 print(f"Debug: Auto-selected layer '{layer_name}' in combo box")
         
     def accept(self):
-        """Process building blocks creation when OK is clicked."""
+        """Filter nutzungFlurstueck layer when OK is clicked."""
         try:
-            community_layer = self.communityLayerCombo.currentLayer()
-            gemarkung_layer = self.gemarkungLayerCombo.currentLayer()
             usage_layer = self.usageLayerCombo.currentLayer()
             
-            if not all([community_layer, gemarkung_layer, usage_layer]):
+            if not usage_layer:
                 QMessageBox.warning(
                     self, "Warning", 
-                    "Please select all required layers:\n"
-                    "- Municipal boundary\n"
-                    "- District boundaries\n" 
-                    "- Land use layer"
+                    "Please select the land use layer (nutzungFlurstueck)"
                 )
                 return
                 
-            output_name = self.outputNameEdit.text().strip()
-            if not output_name:
-                output_name = "building_blocks"
-                
             # Create and show progress dialog
-            progress = QProgressDialog("Creating building blocks...", "Cancel", 0, 100, self)
+            progress = QProgressDialog("Filtering nutzungFlurstueck layer...", "Cancel", 0, 100, self)
             progress.setWindowModality(Qt.WindowModal)
             progress.setWindowTitle("Processing")
             progress.show()
             
-            result_layer = self.create_building_blocks(
-                community_layer, gemarkung_layer, usage_layer, output_name, progress
-            )
+            # Only filter the nutzungFlurstueck layer
+            self.filter_nutzung_flurstueck(usage_layer, self.gemarkungLayerCombo.currentLayer(), progress)
             
             progress.close()
-            
-            if result_layer and self.addToMapCheckBox.isChecked():
-                QgsProject.instance().addMapLayer(result_layer)
                 
             QMessageBox.information(
                 self, "Success", 
-                f"Building blocks created successfully as '{output_name}'"
+                "nutzungFlurstueck layer filtered successfully"
             )
             
             super(CreatorDialog, self).accept()
@@ -138,8 +125,1206 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
         except Exception as e:
             QMessageBox.critical(
                 self, "Error", 
-                f"Failed to create building blocks: {str(e)}"
+                f"Failed to filter nutzungFlurstueck: {str(e)}"
             )
+    
+    def filter_nutzung_flurstueck(self, usage_layer, gemarkung_layer, progress=None):
+        """Filter nutzungFlurstueck layer to show only infrastructure features."""
+        try:
+            # Create a filtered layer with infrastructure features only
+            filtered_layer = QgsVectorLayer(f"Polygon?crs={usage_layer.crs().authid()}", "building_blocks", "memory")
+            
+            # Copy fields from original layer
+            filtered_layer.dataProvider().addAttributes(usage_layer.fields())
+            filtered_layer.updateFields()
+            filtered_layer.startEditing()
+            
+            # Get total number of features for progress tracking
+            total_features = usage_layer.featureCount()
+            processed = 0
+            
+            if progress:
+                progress.setValue(10)
+                progress.setLabelText("Analyzing nutzungFlurstueck features...")
+                QtWidgets.QApplication.processEvents()
+            
+            # Filter features based on usage type
+            for feature in usage_layer.getFeatures():
+                processed += 1
+                
+                # Update progress every 100 features
+                if progress and processed % 100 == 0:
+                    progress_value = 10 + int((processed / total_features) * 80)
+                    progress.setValue(progress_value)
+                    progress.setLabelText(f"Processing feature {processed}/{total_features}")
+                    QtWidgets.QApplication.processEvents()
+                
+                # Check if this feature matches our infrastructure criteria
+                usage_type = self.get_feature_usage_type(feature)
+                if usage_type is not None:  # This feature is infrastructure
+                    # Get original geometry and apply negative 2m buffer
+                    original_geom = feature.geometry()
+                    buffered_geom = original_geom.buffer(-2.0, 5)  # -2m buffer with 5 segments per quarter circle
+                    
+                    # Only add if buffered geometry is valid and not empty
+                    if buffered_geom and not buffered_geom.isEmpty() and not buffered_geom.isNull():
+                        new_feature = QgsFeature(filtered_layer.fields())
+                        new_feature.setGeometry(buffered_geom)
+                        
+                        # Copy all attributes
+                        for field in feature.fields():
+                            field_name = field.name()
+                            new_feature.setAttribute(field_name, feature.attribute(field_name))
+                        
+                        filtered_layer.dataProvider().addFeature(new_feature)
+            
+            filtered_layer.commitChanges()
+            filtered_layer.updateExtents()
+            
+            if progress:
+                progress.setValue(85)
+                progress.setLabelText("Extracting vertices from buffered geometries...")
+                QtWidgets.QApplication.processEvents()
+            
+            # Extract vertices (Stützpunkte) from the buffered geometries
+            vertices_layer = self.extract_vertices(filtered_layer, progress)
+            
+            # Buffer the vertices with 5 meters
+            buffered_vertices_layer = None
+            if vertices_layer:
+                if progress:
+                    progress.setValue(90)
+                    progress.setLabelText("Buffering vertices with 5 meters...")
+                    QtWidgets.QApplication.processEvents()
+                
+                buffered_vertices_layer = self.buffer_vertices(vertices_layer, 5.0, progress)
+            
+            # Union all buffered vertices into a single layer
+            union_layer = None
+            if buffered_vertices_layer:
+                if progress:
+                    progress.setValue(92)
+                    progress.setLabelText("Creating union of all buffers...")
+                    QtWidgets.QApplication.processEvents()
+                
+                union_layer = self.union_buffers(buffered_vertices_layer, progress)
+            
+            # Create centroids from the union buffers
+            centroids_layer = None
+            if union_layer:
+                if progress:
+                    progress.setValue(94)
+                    progress.setLabelText("Creating centroids from union buffers...")
+                    QtWidgets.QApplication.processEvents()
+                
+                centroids_layer = self.create_centroids_from_union(union_layer, progress)
+            
+            # Create Delaunay triangulation from centroids
+            triangulation_layer = None
+            if centroids_layer:
+                if progress:
+                    progress.setValue(96)
+                    progress.setLabelText("Creating Delaunay triangulation...")
+                    QtWidgets.QApplication.processEvents()
+                
+                triangulation_layer = self.create_delaunay_triangulation(centroids_layer, progress)
+            
+            # Convert triangle polygons to lines
+            lines_layer = None
+            if triangulation_layer:
+                if progress:
+                    progress.setValue(97)
+                    progress.setLabelText("Converting triangles to lines...")
+                    QtWidgets.QApplication.processEvents()
+                
+                lines_layer = self.convert_polygons_to_lines(triangulation_layer, progress)
+            
+            # Explode the lines to individual segments
+            exploded_lines_layer = None
+            if lines_layer:
+                if progress:
+                    progress.setValue(98)
+                    progress.setLabelText("Exploding lines to segments...")
+                    QtWidgets.QApplication.processEvents()
+                
+                exploded_lines_layer = self.explode_lines(lines_layer, progress)
+            
+            # Buffer the original filtered geometry (after step 1) with 10 meters
+            buffered_original_layer = None
+            if filtered_layer:
+                if progress:
+                    progress.setValue(99)
+                    progress.setLabelText("Buffering original geometry with 10 meters...")
+                    QtWidgets.QApplication.processEvents()
+                
+                buffered_original_layer = self.buffer_original_geometry(filtered_layer, 10.0, progress)
+            
+            # Dissolve the 10m buffer to create unified geometry
+            dissolved_buffer_layer = None
+            if buffered_original_layer:
+                if progress:
+                    progress.setValue(99)
+                    progress.setLabelText("Dissolving 10m buffer...")
+                    QtWidgets.QApplication.processEvents()
+                
+                dissolved_buffer_layer = self.dissolve_buffer(buffered_original_layer, progress)
+            
+            # Filter lines that are inside the dissolved buffer geometry
+            filtered_lines_layer = None
+            if exploded_lines_layer and dissolved_buffer_layer:
+                if progress:
+                    progress.setValue(99)
+                    progress.setLabelText("Filtering lines inside buffer geometry...")
+                    QtWidgets.QApplication.processEvents()
+                
+                filtered_lines_layer = self.filter_lines_inside_buffer(exploded_lines_layer, dissolved_buffer_layer, progress)
+            
+            # Convert Gemarkung boundaries to lines for intersection
+            gemarkung_lines_layer = None
+            if gemarkung_layer:
+                if progress:
+                    progress.setValue(99)
+                    progress.setLabelText("Converting Gemarkung boundaries to lines...")
+                    QtWidgets.QApplication.processEvents()
+                
+                gemarkung_lines_layer = self.convert_gemarkung_to_lines(gemarkung_layer, progress)
+            
+            # Intersect filtered lines with Gemarkung boundaries
+            final_lines_layer = None
+            if filtered_lines_layer and gemarkung_lines_layer:
+                if progress:
+                    progress.setValue(99)
+                    progress.setLabelText("Intersecting lines with Gemarkung boundaries...")
+                    QtWidgets.QApplication.processEvents()
+                
+                final_lines_layer = self.intersect_with_boundaries(filtered_lines_layer, gemarkung_lines_layer, progress)
+            
+            if progress:
+                progress.setValue(99)
+                progress.setLabelText("Adding layers to map...")
+                QtWidgets.QApplication.processEvents()
+            
+            # Add the Gemarkung lines as the first result
+            if gemarkung_lines_layer:
+                QgsProject.instance().addMapLayer(gemarkung_lines_layer)
+            
+            # Add the intersection of filtered lines with Gemarkung boundaries as second result
+            if final_lines_layer:
+                QgsProject.instance().addMapLayer(final_lines_layer)
+            
+            # Add the dissolved union as third result (single merged geometry)
+            dissolved_union_single = None
+            if union_layer:
+                if progress:
+                    progress.setValue(99)
+                    progress.setLabelText("Creating single merged geometry...")
+                    QtWidgets.QApplication.processEvents()
+                
+                dissolved_union_single = self.dissolve_union_buffers(union_layer, progress)
+            
+            if dissolved_union_single:
+                QgsProject.instance().addMapLayer(dissolved_union_single)
+            
+            if progress:
+                progress.setValue(100)
+                progress.setLabelText("Complete!")
+                QtWidgets.QApplication.processEvents()
+            
+            print(f"Debug: Processing complete - final layer added to map")
+            
+        except Exception as e:
+            if progress:
+                progress.close()
+            raise QgsProcessingException(f"Error filtering nutzungFlurstueck: {str(e)}")
+    
+    def extract_vertices(self, polygon_layer, progress=None):
+        """Extract all vertices (Stützpunkte) from polygon geometries and create a point layer."""
+        try:
+            # Create point layer for vertices
+            vertices_layer = QgsVectorLayer(f"Point?crs={polygon_layer.crs().authid()}", "building_blocks_vertices", "memory")
+            
+            # Define fields for the vertices layer
+            fields = QgsFields()
+            fields.append(QgsField("vertex_id", QVariant.Int))
+            fields.append(QgsField("polygon_id", QVariant.Int))
+            fields.append(QgsField("x_coord", QVariant.Double))
+            fields.append(QgsField("y_coord", QVariant.Double))
+            
+            vertices_layer.dataProvider().addAttributes(fields)
+            vertices_layer.updateFields()
+            vertices_layer.startEditing()
+            
+            vertex_id = 1
+            polygon_id = 1
+            
+            # Process each polygon feature
+            for feature in polygon_layer.getFeatures():
+                geom = feature.geometry()
+                if geom and not geom.isEmpty() and not geom.isNull():
+                    # Extract vertices from the geometry
+                    vertices = self.get_geometry_vertices(geom)
+                    
+                    # Create point features for each vertex
+                    for vertex_point in vertices:
+                        vertex_feature = QgsFeature(vertices_layer.fields())
+                        vertex_feature.setGeometry(QgsGeometry.fromPointXY(vertex_point))
+                        vertex_feature.setAttribute("vertex_id", vertex_id)
+                        vertex_feature.setAttribute("polygon_id", polygon_id)
+                        vertex_feature.setAttribute("x_coord", vertex_point.x())
+                        vertex_feature.setAttribute("y_coord", vertex_point.y())
+                        
+                        vertices_layer.dataProvider().addFeature(vertex_feature)
+                        vertex_id += 1
+                    
+                    polygon_id += 1
+            
+            vertices_layer.commitChanges()
+            vertices_layer.updateExtents()
+            
+            # Style the vertices layer
+            from qgis.core import QgsMarkerSymbol
+            symbol = QgsMarkerSymbol.createSimple({'color': 'blue', 'size': '2', 'outline_color': 'black'})
+            vertices_layer.renderer().setSymbol(symbol)
+            
+            print(f"Debug: Extracted {vertices_layer.featureCount()} vertices from {polygon_layer.featureCount()} polygons")
+            
+            return vertices_layer
+            
+        except Exception as e:
+            print(f"Debug: Error extracting vertices: {e}")
+            return None
+    
+    def get_geometry_vertices(self, geometry):
+        """Extract all vertices from a geometry."""
+        vertices = []
+        
+        try:
+            if geometry.isMultipart():
+                # Handle multipart polygons
+                if geometry.type() == QgsWkbTypes.PolygonGeometry:
+                    multipolygon = geometry.asMultiPolygon()
+                    for polygon in multipolygon:
+                        if polygon and len(polygon) > 0:
+                            # Get exterior ring vertices
+                            exterior_ring = polygon[0]
+                            vertices.extend(exterior_ring)
+                            
+                            # Get interior ring vertices (holes)
+                            for interior_ring in polygon[1:]:
+                                vertices.extend(interior_ring)
+            else:
+                # Handle single part polygons
+                if geometry.type() == QgsWkbTypes.PolygonGeometry:
+                    polygon = geometry.asPolygon()
+                    if polygon and len(polygon) > 0:
+                        # Get exterior ring vertices
+                        exterior_ring = polygon[0]
+                        vertices.extend(exterior_ring)
+                        
+                        # Get interior ring vertices (holes)
+                        for interior_ring in polygon[1:]:
+                            vertices.extend(interior_ring)
+                            
+        except Exception as e:
+            print(f"Debug: Error getting vertices from geometry: {e}")
+            
+        return vertices
+    
+    def buffer_vertices(self, vertices_layer, buffer_distance, progress=None):
+        """Buffer each vertex point with the specified distance to create circles."""
+        try:
+            # Create polygon layer for buffered vertices
+            buffered_layer = QgsVectorLayer(f"Polygon?crs={vertices_layer.crs().authid()}", "building_blocks_vertices_buffered", "memory")
+            
+            # Copy fields from vertices layer and add buffer info
+            buffered_layer.dataProvider().addAttributes(vertices_layer.fields())
+            fields = QgsFields()
+            fields.append(QgsField("buffer_radius", QVariant.Double))
+            buffered_layer.dataProvider().addAttributes([fields.field(0)])
+            buffered_layer.updateFields()
+            buffered_layer.startEditing()
+            
+            total_vertices = vertices_layer.featureCount()
+            processed = 0
+            
+            # Buffer each vertex point
+            for vertex_feature in vertices_layer.getFeatures():
+                processed += 1
+                
+                if progress and processed % 50 == 0:  # Update every 50 vertices
+                    progress_value = 90 + int((processed / total_vertices) * 5)  # 90-95%
+                    progress.setValue(progress_value)
+                    progress.setLabelText(f"Buffering vertex {processed}/{total_vertices}")
+                    QtWidgets.QApplication.processEvents()
+                
+                vertex_geom = vertex_feature.geometry()
+                if vertex_geom and not vertex_geom.isEmpty() and not vertex_geom.isNull():
+                    # Create buffer around the point
+                    buffered_geom = vertex_geom.buffer(buffer_distance, 8)  # 8 segments per quarter circle
+                    
+                    if buffered_geom and not buffered_geom.isEmpty():
+                        # Create new feature with buffered geometry
+                        buffered_feature = QgsFeature(buffered_layer.fields())
+                        buffered_feature.setGeometry(buffered_geom)
+                        
+                        # Copy all attributes from original vertex
+                        for field in vertex_feature.fields():
+                            field_name = field.name()
+                            buffered_feature.setAttribute(field_name, vertex_feature.attribute(field_name))
+                        
+                        # Add buffer radius attribute
+                        buffered_feature.setAttribute("buffer_radius", buffer_distance)
+                        
+                        buffered_layer.dataProvider().addFeature(buffered_feature)
+            
+            buffered_layer.commitChanges()
+            buffered_layer.updateExtents()
+            
+            # Style the buffered vertices layer with semi-transparent circles
+            from qgis.core import QgsFillSymbol
+            symbol = QgsFillSymbol.createSimple({'color': '0,255,0,100', 'color_border': 'green', 'width_border': '0.5'})
+            buffered_layer.renderer().setSymbol(symbol)
+            
+            print(f"Debug: Created {buffered_layer.featureCount()} buffered circles from {total_vertices} vertices")
+            
+            return buffered_layer
+            
+        except Exception as e:
+            print(f"Debug: Error buffering vertices: {e}")
+            return None
+    
+    def union_buffers(self, buffered_layer, progress=None):
+        """Union all buffer polygons into a single merged layer."""
+        try:
+            # Use QGIS processing to create union/dissolve
+            try:
+                if progress:
+                    progress.setValue(92)
+                    progress.setLabelText("Dissolving overlapping buffers...")
+                    QtWidgets.QApplication.processEvents()
+                
+                result = processing.run(
+                    "native:dissolve",
+                    {
+                        'INPUT': buffered_layer,
+                        'FIELD': [],  # Dissolve all features together
+                        'OUTPUT': 'TEMPORARY_OUTPUT'
+                    }
+                )
+                
+                dissolved_layer = result['OUTPUT']
+                
+                # Create a new memory layer with the dissolved result
+                union_layer = QgsVectorLayer(f"Polygon?crs={buffered_layer.crs().authid()}", "building_blocks_buffers_union", "memory")
+                
+                # Simple fields for the union layer
+                fields = QgsFields()
+                fields.append(QgsField("union_id", QVariant.Int))
+                fields.append(QgsField("total_area", QVariant.Double))
+                fields.append(QgsField("part_count", QVariant.Int))
+                
+                union_layer.dataProvider().addAttributes(fields)
+                union_layer.updateFields()
+                union_layer.startEditing()
+                
+                # Add dissolved features to the union layer
+                union_id = 1
+                total_area = 0
+                part_count = 0
+                
+                for feature in dissolved_layer.getFeatures():
+                    geom = feature.geometry()
+                    if geom and not geom.isEmpty() and not geom.isNull():
+                        new_feature = QgsFeature(union_layer.fields())
+                        new_feature.setGeometry(geom)
+                        new_feature.setAttribute("union_id", union_id)
+                        new_feature.setAttribute("total_area", geom.area())
+                        
+                        # Count parts (for multipart geometries)
+                        if geom.isMultipart():
+                            if geom.type() == QgsWkbTypes.PolygonGeometry:
+                                part_count = len(geom.asMultiPolygon())
+                            else:
+                                part_count = 1
+                        else:
+                            part_count = 1
+                            
+                        new_feature.setAttribute("part_count", part_count)
+                        total_area += geom.area()
+                        
+                        union_layer.dataProvider().addFeature(new_feature)
+                        union_id += 1
+                
+                union_layer.commitChanges()
+                union_layer.updateExtents()
+                
+                # Style the union layer with a distinct color
+                from qgis.core import QgsFillSymbol
+                symbol = QgsFillSymbol.createSimple({'color': '255,165,0,120', 'color_border': 'orange', 'width_border': '1.0'})
+                union_layer.renderer().setSymbol(symbol)
+                
+                if progress:
+                    progress.setValue(94)
+                    progress.setLabelText("Union completed")
+                    QtWidgets.QApplication.processEvents()
+                
+                print(f"Debug: Created union layer with {union_layer.featureCount()} features, total area: {total_area:.2f}")
+                
+                return union_layer
+                
+            except Exception as e:
+                print(f"Debug: QGIS processing failed, falling back to manual union: {e}")
+                return self.union_buffers_fallback(buffered_layer, progress)
+                
+        except Exception as e:
+            print(f"Debug: Error creating buffer union: {e}")
+            return None
+    
+    def union_buffers_fallback(self, buffered_layer, progress=None):
+        """Fallback method for buffer union using geometry operations."""
+        try:
+            # Collect all geometries
+            all_geometries = []
+            for feature in buffered_layer.getFeatures():
+                geom = feature.geometry()
+                if geom and not geom.isEmpty() and not geom.isNull():
+                    all_geometries.append(geom)
+            
+            if not all_geometries:
+                return None
+            
+            if progress:
+                progress.setValue(93)
+                progress.setLabelText("Manual union of buffers...")
+                QtWidgets.QApplication.processEvents()
+            
+            # Start with the first geometry and union with all others
+            union_geom = all_geometries[0]
+            for i, geom in enumerate(all_geometries[1:], 1):
+                if progress and i % 10 == 0:
+                    progress.setLabelText(f"Unioning geometry {i}/{len(all_geometries)}")
+                    QtWidgets.QApplication.processEvents()
+                
+                union_geom = union_geom.combine(geom)
+            
+            # Create result layer
+            union_layer = QgsVectorLayer(f"Polygon?crs={buffered_layer.crs().authid()}", "building_blocks_buffers_union", "memory")
+            
+            fields = QgsFields()
+            fields.append(QgsField("union_id", QVariant.Int))
+            fields.append(QgsField("total_area", QVariant.Double))
+            
+            union_layer.dataProvider().addAttributes(fields)
+            union_layer.updateFields()
+            union_layer.startEditing()
+            
+            # Add the union geometry
+            if union_geom and not union_geom.isEmpty():
+                new_feature = QgsFeature(union_layer.fields())
+                new_feature.setGeometry(union_geom)
+                new_feature.setAttribute("union_id", 1)
+                new_feature.setAttribute("total_area", union_geom.area())
+                union_layer.dataProvider().addFeature(new_feature)
+            
+            union_layer.commitChanges()
+            union_layer.updateExtents()
+            
+            # Style the union layer
+            from qgis.core import QgsFillSymbol
+            symbol = QgsFillSymbol.createSimple({'color': '255,165,0,120', 'color_border': 'orange', 'width_border': '1.0'})
+            union_layer.renderer().setSymbol(symbol)
+            
+            print(f"Debug: Created fallback union layer with {union_layer.featureCount()} features")
+            
+            return union_layer
+            
+        except Exception as e:
+            print(f"Debug: Error in fallback buffer union: {e}")
+            return None
+    
+    def dissolve_union_buffers(self, union_layer, progress=None):
+        """Dissolve union buffers to merge overlapping areas using QGIS processing."""
+        try:
+            if progress:
+                progress.setValue(93)
+                progress.setLabelText("Dissolving union buffers...")
+                QtWidgets.QApplication.processEvents()
+            
+            # Use QGIS processing to dissolve the union buffers
+            result = processing.run(
+                "native:dissolve",
+                {
+                    'INPUT': union_layer,  # Use the union layer as input
+                    'FIELD': [],  # Dissolve all features together (no field grouping)
+                    'OUTPUT': 'TEMPORARY_OUTPUT'
+                }
+            )
+            
+            dissolved_temp_layer = result['OUTPUT']
+            
+            # Create a properly named memory layer and copy the results
+            dissolved_layer = QgsVectorLayer(f"Polygon?crs={union_layer.crs().authid()}", "building_blocks_dissolved_union", "memory")
+            
+            # Copy fields from the processing result
+            dissolved_layer.dataProvider().addAttributes(dissolved_temp_layer.fields())
+            dissolved_layer.updateFields()
+            dissolved_layer.startEditing()
+            
+            # Copy all features from processing result
+            for feature in dissolved_temp_layer.getFeatures():
+                dissolved_layer.dataProvider().addFeature(feature)
+            
+            dissolved_layer.commitChanges()
+            dissolved_layer.updateExtents()
+            
+            # Style the dissolved union layer
+            from qgis.core import QgsFillSymbol
+            symbol = QgsFillSymbol.createSimple({
+                'color': '255,128,0,120',  # Orange with transparency
+                'color_border': 'darkorange', 
+                'width_border': '1.5'
+            })
+            dissolved_layer.renderer().setSymbol(symbol)
+            
+            print(f"Debug: Created dissolved union with {dissolved_layer.featureCount()} merged features")
+            
+            return dissolved_layer
+            
+        except Exception as e:
+            print(f"Debug: QGIS dissolve of union buffers failed: {e}")
+            return None
+    
+    def create_centroids_from_union(self, union_layer, progress=None):
+        """Create centroids from union buffer polygons using direct QGIS processing."""
+        try:
+            if progress:
+                progress.setValue(94)
+                progress.setLabelText("Creating centroids using QGIS processing...")
+                QtWidgets.QApplication.processEvents()
+            
+            # Use QGIS processing to create centroids directly from the memory layer
+            result = processing.run(
+                "native:centroids",
+                {
+                    'INPUT': union_layer,  # Use the layer object directly
+                    'ALL_PARTS': True,
+                    'OUTPUT': 'TEMPORARY_OUTPUT'
+                }
+            )
+            
+            centroids_temp_layer = result['OUTPUT']
+            
+            # Create a properly named memory layer and copy the results
+            centroids_layer = QgsVectorLayer(f"Point?crs={union_layer.crs().authid()}", "building_blocks_centroids", "memory")
+            
+            # Copy fields from the processing result
+            centroids_layer.dataProvider().addAttributes(centroids_temp_layer.fields())
+            centroids_layer.updateFields()
+            centroids_layer.startEditing()
+            
+            # Copy all features from processing result
+            for feature in centroids_temp_layer.getFeatures():
+                centroids_layer.dataProvider().addFeature(feature)
+            
+            centroids_layer.commitChanges()
+            centroids_layer.updateExtents()
+            
+            # Style the centroids layer with distinct markers
+            from qgis.core import QgsMarkerSymbol
+            symbol = QgsMarkerSymbol.createSimple({
+                'color': 'purple', 
+                'size': '4', 
+                'outline_color': 'black',
+                'outline_width': '0.5'
+            })
+            centroids_layer.renderer().setSymbol(symbol)
+            
+            print(f"Debug: Created {centroids_layer.featureCount()} centroids using direct QGIS processing")
+            
+            return centroids_layer
+            
+        except Exception as e:
+            print(f"Debug: QGIS processing centroids failed: {e}")
+            return None
+    
+    def create_delaunay_triangulation(self, centroids_layer, progress=None):
+        """Create Delaunay triangulation from centroid points using QGIS processing."""
+        try:
+            if progress:
+                progress.setValue(96)
+                progress.setLabelText("Creating Delaunay triangulation...")
+                QtWidgets.QApplication.processEvents()
+            
+            # Use QGIS processing to create Delaunay triangulation
+            result = processing.run(
+                "qgis:delaunaytriangulation",
+                {
+                    'INPUT': centroids_layer,  # Use the centroids layer as input
+                    'OUTPUT': 'TEMPORARY_OUTPUT'
+                }
+            )
+            
+            triangulation_temp_layer = result['OUTPUT']
+            
+            # Create a properly named memory layer and copy the results
+            triangulation_layer = QgsVectorLayer(f"Polygon?crs={centroids_layer.crs().authid()}", "building_blocks_triangulation", "memory")
+            
+            # Copy fields from the processing result
+            triangulation_layer.dataProvider().addAttributes(triangulation_temp_layer.fields())
+            triangulation_layer.updateFields()
+            triangulation_layer.startEditing()
+            
+            # Copy all features from processing result
+            for feature in triangulation_temp_layer.getFeatures():
+                triangulation_layer.dataProvider().addFeature(feature)
+            
+            triangulation_layer.commitChanges()
+            triangulation_layer.updateExtents()
+            
+            # Style the triangulation layer with transparent fill and visible edges
+            from qgis.core import QgsFillSymbol
+            symbol = QgsFillSymbol.createSimple({
+                'color': '255,255,0,50',  # Yellow with transparency
+                'color_border': 'red', 
+                'width_border': '0.8',
+                'style': 'no_brush'  # No fill, only border
+            })
+            triangulation_layer.renderer().setSymbol(symbol)
+            
+            print(f"Debug: Created Delaunay triangulation with {triangulation_layer.featureCount()} triangles")
+            
+            return triangulation_layer
+            
+        except Exception as e:
+            print(f"Debug: QGIS Delaunay triangulation failed: {e}")
+            return None
+    
+    def convert_polygons_to_lines(self, polygon_layer, progress=None):
+        """Convert triangle polygons to lines using QGIS processing."""
+        try:
+            if progress:
+                progress.setValue(97)
+                progress.setLabelText("Converting polygons to lines...")
+                QtWidgets.QApplication.processEvents()
+            
+            # Use QGIS processing to convert polygons to lines
+            result = processing.run(
+                "native:polygonstolines",
+                {
+                    'INPUT': polygon_layer,  # Use the triangulation layer as input
+                    'OUTPUT': 'TEMPORARY_OUTPUT'
+                }
+            )
+            
+            lines_temp_layer = result['OUTPUT']
+            
+            # Create a properly named memory layer and copy the results
+            lines_layer = QgsVectorLayer(f"LineString?crs={polygon_layer.crs().authid()}", "building_blocks_lines", "memory")
+            
+            # Copy fields from the processing result
+            lines_layer.dataProvider().addAttributes(lines_temp_layer.fields())
+            lines_layer.updateFields()
+            lines_layer.startEditing()
+            
+            # Copy all features from processing result
+            for feature in lines_temp_layer.getFeatures():
+                lines_layer.dataProvider().addFeature(feature)
+            
+            lines_layer.commitChanges()
+            lines_layer.updateExtents()
+            
+            # Style the lines layer with distinct line style
+            from qgis.core import QgsLineSymbol
+            symbol = QgsLineSymbol.createSimple({
+                'color': 'blue',
+                'width': '1.5',
+                'line_style': 'solid'
+            })
+            lines_layer.renderer().setSymbol(symbol)
+            
+            print(f"Debug: Created {lines_layer.featureCount()} lines from triangle polygons")
+            
+            return lines_layer
+            
+        except Exception as e:
+            print(f"Debug: QGIS polygon to lines conversion failed: {e}")
+            return None
+    
+    def explode_lines(self, lines_layer, progress=None):
+        """Explode multipart lines to single part lines using QGIS processing."""
+        try:
+            if progress:
+                progress.setValue(98)
+                progress.setLabelText("Exploding lines to segments...")
+                QtWidgets.QApplication.processEvents()
+            
+            # Use QGIS processing to explode lines
+            result = processing.run(
+                "native:explodelines",
+                {
+                    'INPUT': lines_layer,  # Use the lines layer as input
+                    'OUTPUT': 'TEMPORARY_OUTPUT'
+                }
+            )
+            
+            exploded_temp_layer = result['OUTPUT']
+            
+            # Create a properly named memory layer and copy the results
+            exploded_layer = QgsVectorLayer(f"LineString?crs={lines_layer.crs().authid()}", "building_blocks_exploded_lines", "memory")
+            
+            # Copy fields from the processing result
+            exploded_layer.dataProvider().addAttributes(exploded_temp_layer.fields())
+            exploded_layer.updateFields()
+            exploded_layer.startEditing()
+            
+            # Copy all features from processing result
+            for feature in exploded_temp_layer.getFeatures():
+                exploded_layer.dataProvider().addFeature(feature)
+            
+            exploded_layer.commitChanges()
+            exploded_layer.updateExtents()
+            
+            # Style the exploded lines layer with a distinct style
+            from qgis.core import QgsLineSymbol
+            symbol = QgsLineSymbol.createSimple({
+                'color': 'darkblue',
+                'width': '1.0',
+                'line_style': 'solid'
+            })
+            exploded_layer.renderer().setSymbol(symbol)
+            
+            print(f"Debug: Created {exploded_layer.featureCount()} exploded line segments")
+            
+            return exploded_layer
+            
+        except Exception as e:
+            print(f"Debug: QGIS line explosion failed: {e}")
+            return None
+    
+    def buffer_original_geometry(self, filtered_layer, buffer_distance, progress=None):
+        """Buffer the original filtered geometry with specified distance using QGIS processing."""
+        try:
+            if progress:
+                progress.setValue(99)
+                progress.setLabelText(f"Buffering original geometry with {buffer_distance}m...")
+                QtWidgets.QApplication.processEvents()
+            
+            # Use QGIS processing to buffer the filtered geometry
+            result = processing.run(
+                "native:buffer",
+                {
+                    'INPUT': filtered_layer,  # Use the original filtered layer as input
+                    'DISTANCE': buffer_distance,  # 10 meter buffer
+                    'SEGMENTS': 8,  # 8 segments per quarter circle
+                    'END_CAP_STYLE': 0,  # Round caps
+                    'JOIN_STYLE': 0,  # Round joins
+                    'MITER_LIMIT': 2,
+                    'DISSOLVE': False,
+                    'OUTPUT': 'TEMPORARY_OUTPUT'
+                }
+            )
+            
+            buffered_temp_layer = result['OUTPUT']
+            
+            # Create a properly named memory layer and copy the results
+            buffered_layer = QgsVectorLayer(f"Polygon?crs={filtered_layer.crs().authid()}", "building_blocks_original_buffered", "memory")
+            
+            # Copy fields from the processing result
+            buffered_layer.dataProvider().addAttributes(buffered_temp_layer.fields())
+            buffered_layer.updateFields()
+            buffered_layer.startEditing()
+            
+            # Copy all features from processing result
+            for feature in buffered_temp_layer.getFeatures():
+                buffered_layer.dataProvider().addFeature(feature)
+            
+            buffered_layer.commitChanges()
+            buffered_layer.updateExtents()
+            
+            # Style the buffered layer with a distinct transparent fill
+            from qgis.core import QgsFillSymbol
+            symbol = QgsFillSymbol.createSimple({
+                'color': '255,0,255,80',  # Magenta with transparency
+                'color_border': 'magenta', 
+                'width_border': '1.2'
+            })
+            buffered_layer.renderer().setSymbol(symbol)
+            
+            print(f"Debug: Created {buffered_layer.featureCount()} buffered features from original geometry")
+            
+            return buffered_layer
+            
+        except Exception as e:
+            print(f"Debug: QGIS buffer of original geometry failed: {e}")
+            return None
+    
+    def dissolve_buffer(self, buffered_layer, progress=None):
+        """Dissolve the buffered geometry to create unified areas using QGIS processing."""
+        try:
+            if progress:
+                progress.setValue(99)
+                progress.setLabelText("Dissolving buffer geometry...")
+                QtWidgets.QApplication.processEvents()
+            
+            # Use QGIS processing to dissolve the buffered geometry
+            result = processing.run(
+                "native:dissolve",
+                {
+                    'INPUT': buffered_layer,  # Use the buffered layer as input
+                    'FIELD': [],  # Dissolve all features together (no field grouping)
+                    'OUTPUT': 'TEMPORARY_OUTPUT'
+                }
+            )
+            
+            dissolved_temp_layer = result['OUTPUT']
+            
+            # Create a properly named memory layer and copy the results
+            dissolved_layer = QgsVectorLayer(f"Polygon?crs={buffered_layer.crs().authid()}", "building_blocks_dissolved_buffer", "memory")
+            
+            # Copy fields from the processing result
+            dissolved_layer.dataProvider().addAttributes(dissolved_temp_layer.fields())
+            dissolved_layer.updateFields()
+            dissolved_layer.startEditing()
+            
+            # Copy all features from processing result
+            for feature in dissolved_temp_layer.getFeatures():
+                dissolved_layer.dataProvider().addFeature(feature)
+            
+            dissolved_layer.commitChanges()
+            dissolved_layer.updateExtents()
+            
+            # Style the dissolved layer with a distinct transparent fill
+            from qgis.core import QgsFillSymbol
+            symbol = QgsFillSymbol.createSimple({
+                'color': '0,255,255,100',  # Cyan with transparency
+                'color_border': 'darkblue', 
+                'width_border': '1.5'
+            })
+            dissolved_layer.renderer().setSymbol(symbol)
+            
+            print(f"Debug: Created dissolved buffer with {dissolved_layer.featureCount()} unified features")
+            
+            return dissolved_layer
+            
+        except Exception as e:
+            print(f"Debug: QGIS dissolve of buffer failed: {e}")
+            return None
+    
+    def filter_lines_inside_buffer(self, lines_layer, buffer_layer, progress=None):
+        """Filter lines to keep only those that are inside the buffer geometry using QGIS processing."""
+        try:
+            if progress:
+                progress.setValue(99)
+                progress.setLabelText("Filtering lines inside buffer...")
+                QtWidgets.QApplication.processEvents()
+            
+            # Use QGIS processing to extract lines that are within the buffer
+            result = processing.run(
+                "native:extractbylocation",
+                {
+                    'INPUT': lines_layer,  # Lines to filter
+                    'PREDICATE': [6],  # 6 = within (only lines completely within)
+                    'INTERSECT': buffer_layer,  # Buffer geometry to check against
+                    'OUTPUT': 'TEMPORARY_OUTPUT'
+                }
+            )
+            
+            filtered_temp_layer = result['OUTPUT']
+            
+            # Create a properly named memory layer and copy the results
+            filtered_layer = QgsVectorLayer(f"LineString?crs={lines_layer.crs().authid()}", "building_blocks_filtered_lines", "memory")
+            
+            # Copy fields from the processing result
+            filtered_layer.dataProvider().addAttributes(filtered_temp_layer.fields())
+            filtered_layer.updateFields()
+            filtered_layer.startEditing()
+            
+            # Copy all features from processing result
+            for feature in filtered_temp_layer.getFeatures():
+                filtered_layer.dataProvider().addFeature(feature)
+            
+            filtered_layer.commitChanges()
+            filtered_layer.updateExtents()
+            
+            # Style the filtered lines layer with a distinct style
+            from qgis.core import QgsLineSymbol
+            symbol = QgsLineSymbol.createSimple({
+                'color': 'red',
+                'width': '2.0',
+                'line_style': 'solid'
+            })
+            filtered_layer.renderer().setSymbol(symbol)
+            
+            print(f"Debug: Filtered to {filtered_layer.featureCount()} lines inside buffer geometry")
+            
+            return filtered_layer
+            
+        except Exception as e:
+            print(f"Debug: QGIS line filtering failed: {e}")
+            return None
+    
+    def intersect_with_boundaries(self, lines_layer, boundary_lines_layer, progress=None):
+        """Intersect filtered lines with boundary lines using QGIS processing."""
+        try:
+            if progress:
+                progress.setValue(99)
+                progress.setLabelText("Intersecting lines with boundaries...")
+                QtWidgets.QApplication.processEvents()
+            
+            # Use QGIS processing to intersect lines with boundaries
+            result = processing.run(
+                "native:lineintersections",
+                {
+                    'INPUT': lines_layer,  # Filtered lines
+                    'INTERSECT': boundary_lines_layer,  # Gemarkung boundary lines
+                    'INPUT_FIELDS': [],  # Keep all fields from input
+                    'INTERSECT_FIELDS': [],  # Keep all fields from intersect layer
+                    'OUTPUT': 'TEMPORARY_OUTPUT'
+                }
+            )
+            
+            intersect_temp_layer = result['OUTPUT']
+            
+            # Create a properly named memory layer and copy the results
+            intersect_layer = QgsVectorLayer(f"Point?crs={lines_layer.crs().authid()}", "building_blocks_intersections", "memory")
+            
+            # Copy fields from the processing result
+            intersect_layer.dataProvider().addAttributes(intersect_temp_layer.fields())
+            intersect_layer.updateFields()
+            intersect_layer.startEditing()
+            
+            # Copy all features from processing result
+            for feature in intersect_temp_layer.getFeatures():
+                intersect_layer.dataProvider().addFeature(feature)
+            
+            intersect_layer.commitChanges()
+            intersect_layer.updateExtents()
+            
+            # Style the intersection points with a distinct style
+            from qgis.core import QgsMarkerSymbol
+            symbol = QgsMarkerSymbol.createSimple({
+                'color': 'yellow',
+                'size': '3',
+                'outline_color': 'black',
+                'outline_width': '1'
+            })
+            intersect_layer.renderer().setSymbol(symbol)
+            
+            print(f"Debug: Created {intersect_layer.featureCount()} intersection points with boundaries")
+            
+            return intersect_layer
+            
+        except Exception as e:
+            print(f"Debug: QGIS line intersection failed: {e}")
+            return None
+    
+    def convert_gemarkung_to_lines(self, gemarkung_layer, progress=None):
+        """Convert Gemarkungsgrenzen_KreisGT polygons to lines using QGIS processing."""
+        try:
+            if progress:
+                progress.setValue(99)
+                progress.setLabelText("Converting Gemarkungsgrenzen_KreisGT to lines...")
+                QtWidgets.QApplication.processEvents()
+            
+            # Use QGIS processing to convert polygons to lines
+            result = processing.run(
+                "native:polygonstolines",
+                {
+                    'INPUT': gemarkung_layer,  # Use the Gemarkungsgrenzen_KreisGT layer
+                    'OUTPUT': 'TEMPORARY_OUTPUT'
+                }
+            )
+            
+            lines_temp_layer = result['OUTPUT']
+            
+            # Create a properly named memory layer and copy the results
+            lines_layer = QgsVectorLayer(f"LineString?crs={gemarkung_layer.crs().authid()}", "Gemarkungsgrenzen_KreisGT_lines", "memory")
+            
+            # Copy fields from the processing result
+            lines_layer.dataProvider().addAttributes(lines_temp_layer.fields())
+            lines_layer.updateFields()
+            lines_layer.startEditing()
+            
+            # Copy all features from processing result
+            for feature in lines_temp_layer.getFeatures():
+                lines_layer.dataProvider().addFeature(feature)
+            
+            lines_layer.commitChanges()
+            lines_layer.updateExtents()
+            
+            # Style the Gemarkung lines layer with a distinct line style
+            from qgis.core import QgsLineSymbol
+            symbol = QgsLineSymbol.createSimple({
+                'color': 'darkgreen',
+                'width': '1.8',
+                'line_style': 'solid'
+            })
+            lines_layer.renderer().setSymbol(symbol)
+            
+            print(f"Debug: Converted Gemarkungsgrenzen_KreisGT to {lines_layer.featureCount()} line features")
+            
+            return lines_layer
+            
+        except Exception as e:
+            print(f"Debug: QGIS Gemarkung polygon to lines conversion failed: {e}")
+            return None
+    
+    def create_centroids(self, union_layer, progress=None):
+        """Create centroids from union buffer polygons using QGIS processing."""
+        try:
+            if progress:
+                progress.setValue(94)
+                progress.setLabelText("Creating centroids using QGIS processing...")
+                QtWidgets.QApplication.processEvents()
+            
+            # Use QGIS processing to create centroids with filter
+            result = processing.run(
+                "native:centroids",
+                {
+                    'INPUT': f"{union_layer.id()}|subset=\"Gemeinde\" = 'Herzebrock-Clarholz'",
+                    'ALL_PARTS': True,
+                    'OUTPUT': 'TEMPORARY_OUTPUT'
+                }
+            )
+            
+            centroids_temp_layer = result['OUTPUT']
+            
+            # Create a properly named memory layer and copy the results
+            centroids_layer = QgsVectorLayer(f"Point?crs={union_layer.crs().authid()}", "building_blocks_centroids", "memory")
+            
+            # Copy fields from the processing result
+            centroids_layer.dataProvider().addAttributes(centroids_temp_layer.fields())
+            centroids_layer.updateFields()
+            centroids_layer.startEditing()
+            
+            # Copy all features from processing result
+            for feature in centroids_temp_layer.getFeatures():
+                centroids_layer.dataProvider().addFeature(feature)
+            
+            centroids_layer.commitChanges()
+            centroids_layer.updateExtents()
+            
+            # Style the centroids layer with distinct markers
+            from qgis.core import QgsMarkerSymbol
+            symbol = QgsMarkerSymbol.createSimple({
+                'color': 'purple', 
+                'size': '4', 
+                'outline_color': 'black',
+                'outline_width': '0.5'
+            })
+            centroids_layer.renderer().setSymbol(symbol)
+            
+            print(f"Debug: Created {centroids_layer.featureCount()} centroids using QGIS processing")
+            
+            return centroids_layer
+            
+        except Exception as e:
+            print(f"Debug: QGIS processing centroids failed: {e}, falling back to manual method")
+            # Fallback to the original manual method
+            return self.create_centroids_fallback(union_layer, progress)
+    
+    def create_centroids_fallback(self, union_layer, progress=None):
+        """Fallback method to create centroids manually."""
+        try:
+            # Create point layer for centroids
+            centroids_layer = QgsVectorLayer(f"Point?crs={union_layer.crs().authid()}", "building_blocks_centroids", "memory")
+            
+            # Define fields for centroids layer
+            fields = QgsFields()
+            fields.append(QgsField("centroid_id", QVariant.Int))
+            fields.append(QgsField("source_area", QVariant.Double))
+            fields.append(QgsField("x_coord", QVariant.Double))
+            fields.append(QgsField("y_coord", QVariant.Double))
+            fields.append(QgsField("centroid_type", QVariant.String))
+            
+            centroids_layer.dataProvider().addAttributes(fields)
+            centroids_layer.updateFields()
+            centroids_layer.startEditing()
+            
+            centroid_id = 1
+            total_features = union_layer.featureCount()
+            processed = 0
+            
+            # Process each union feature
+            for feature in union_layer.getFeatures():
+                processed += 1
+                
+                if progress and total_features > 1:
+                    progress_value = 94 + int((processed / total_features) * 1)  # 94-95%
+                    progress.setValue(progress_value)
+                    progress.setLabelText(f"Creating centroid {processed}/{total_features}")
+                    QtWidgets.QApplication.processEvents()
+                
+                geom = feature.geometry()
+                if geom and not geom.isEmpty() and not geom.isNull():
+                    # Handle multipart geometries - create centroids for each part
+                    if geom.isMultipart():
+                        if geom.type() == QgsWkbTypes.PolygonGeometry:
+                            multipolygon = geom.asMultiPolygon()
+                            for part_index, polygon in enumerate(multipolygon):
+                                if polygon:
+                                    part_geom = QgsGeometry.fromPolygonXY(polygon)
+                                    centroid = self.create_centroid_for_polygon(part_geom, feature, centroid_id, f"multipart_{part_index}")
+                                    if centroid:
+                                        centroids_layer.dataProvider().addFeature(centroid)
+                                        centroid_id += 1
+                    else:
+                        # Single part geometry
+                        centroid = self.create_centroid_for_polygon(geom, feature, centroid_id, "single_part")
+                        if centroid:
+                            centroids_layer.dataProvider().addFeature(centroid)
+                            centroid_id += 1
+            
+            centroids_layer.commitChanges()
+            centroids_layer.updateExtents()
+            
+            # Style the centroids layer with distinct markers
+            from qgis.core import QgsMarkerSymbol
+            symbol = QgsMarkerSymbol.createSimple({
+                'color': 'purple', 
+                'size': '4', 
+                'outline_color': 'black',
+                'outline_width': '0.5'
+            })
+            centroids_layer.renderer().setSymbol(symbol)
+            
+            print(f"Debug: Created {centroids_layer.featureCount()} centroids from {total_features} union features (fallback)")
+            
+            return centroids_layer
+            
+        except Exception as e:
+            print(f"Debug: Error creating centroids fallback: {e}")
+            return None
+    
+    def create_centroid_for_polygon(self, polygon_geom, source_feature, centroid_id, centroid_type):
+        """Create a centroid point feature for a single polygon."""
+        try:
+            # Calculate centroid
+            centroid_point = polygon_geom.centroid()
+            
+            if centroid_point and not centroid_point.isEmpty():
+                # Create new centroid feature
+                centroid_feature = QgsFeature()
+                centroid_feature.setGeometry(centroid_point)
+                
+                # Get coordinates
+                point = centroid_point.asPoint()
+                x_coord = point.x()
+                y_coord = point.y()
+                
+                # Set attributes
+                centroid_feature.setAttribute("centroid_id", centroid_id)
+                centroid_feature.setAttribute("source_area", polygon_geom.area())
+                centroid_feature.setAttribute("x_coord", x_coord)
+                centroid_feature.setAttribute("y_coord", y_coord)
+                centroid_feature.setAttribute("centroid_type", centroid_type)
+                
+                return centroid_feature
+            
+        except Exception as e:
+            print(f"Debug: Error creating centroid for polygon: {e}")
+            
+        return None
             
     def create_building_blocks(self, community_layer, gemarkung_layer, usage_layer, output_name, progress=None):
         """Create building blocks by subtracting infrastructure from study area."""
@@ -617,12 +1802,8 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
         # Define the allowed usage types (Nutzart values)
         allowed_usage_types = {
             'Bahnverkehr',
-            'Begleitfläche Bahnverkehr', 
             'Fließgewässer',
-            'Stehendes Gewässer',
-            'Stehendes Gewässer, nicht ständig Wasserführend mit PNR 1106',
             'Straßenverkehr',
-            'Verkehrsbegleitfläche Straße',
             'Weg'
         }
         
