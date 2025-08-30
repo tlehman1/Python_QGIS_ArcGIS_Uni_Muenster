@@ -1,0 +1,31 @@
+Alle Inputs aus den Nutzungsarten zu einer großen Geometrie vereinen
+
+Geometrie negativ um 2.5 Meter buffern
+
+Stützpunkte extrahieren
+
+Stützpunkte mit 12 Metern Buffern
+
+Buffer Vereinigen
+
+Zentroide von Buffern erstellen
+
+Delauney Triangulation zwischen Stützpunkten
+
+Dreieckspolygone zu Linien
+
+Linien Exploden
+
+Anfangsgeometrie um 10 Meter buffern
+
+Linien filtern nach denen die innerhalb der gebufferten Geometrie liegen
+
+Verschneiden mit anderen Grenzen
+
+Polygonbildung
+
+Single Part Polygone Bilden 
+
+Auswahl Kleinstpolygone (1000 m²)
+
+Verschmelzen der Kleinstpolygone
