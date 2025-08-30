@@ -59,10 +59,36 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
         self.gemarkungLayerCombo.setFilters(QgsMapLayerProxyModel.PolygonLayer)
         self.usageLayerCombo.setFilters(QgsMapLayerProxyModel.PolygonLayer)
         
-        # Set placeholder text
-        self.communityLayerCombo.setCurrentText("Select layer")
-        self.gemarkungLayerCombo.setCurrentText("Select layer") 
-        self.usageLayerCombo.setCurrentText("Select layer")
+        # Auto-select specific layers if they exist
+        self.auto_select_layers()
+        
+        # Set placeholder text if no layers were auto-selected
+        if not self.communityLayerCombo.currentLayer():
+            self.communityLayerCombo.setCurrentText("Select layer")
+        if not self.gemarkungLayerCombo.currentLayer():
+            self.gemarkungLayerCombo.setCurrentText("Select layer")
+        if not self.usageLayerCombo.currentLayer():
+            self.usageLayerCombo.setCurrentText("Select layer")
+    
+    def auto_select_layers(self):
+        """Auto-select layers with specific names if they are loaded."""
+        project = QgsProject.instance()
+        
+        # Define expected layer names
+        expected_layers = {
+            'nutzungFlurstueck': self.usageLayerCombo,
+            'Gemeindegrenzen_KreisGT': self.communityLayerCombo,
+            'Gemarkungsgrenzen_KreisGT': self.gemarkungLayerCombo
+        }
+        
+        # Search through all loaded layers
+        for layer in project.mapLayers().values():
+            layer_name = layer.name()
+            if layer_name in expected_layers:
+                combo_box = expected_layers[layer_name]
+                # Set the layer in the combo box
+                combo_box.setLayer(layer)
+                print(f"Debug: Auto-selected layer '{layer_name}' in combo box")
         
     def accept(self):
         """Process building blocks creation when OK is clicked."""
@@ -116,18 +142,18 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
     def create_building_blocks(self, community_layer, gemarkung_layer, usage_layer, output_name, progress=None):
         """Create building blocks by subtracting infrastructure from study area."""
         try:
-            # Use the CRS from the community layer
-            crs = community_layer.crs()
+            # Use the CRS from the usage layer
+            crs = usage_layer.crs()
             
             if progress:
-                progress.setLabelText("Step 1: Creating study area from administrative boundaries...")
+                progress.setLabelText("Step 1: Creating study area from land use layer...")
                 progress.setValue(10)
                 QtWidgets.QApplication.processEvents()
             
-            # Step 1: Create study area (union of community and gemarkung)
-            study_area = self.create_study_area(community_layer, gemarkung_layer)
+            # Step 1: Create study area (union of all nutzungFlurstueck features)
+            study_area = self.create_study_area_from_usage(usage_layer)
             if not study_area:
-                raise QgsProcessingException("Could not create study area from administrative boundaries")
+                raise QgsProcessingException("Could not create study area from land use layer")
             
             if progress:
                 progress.setLabelText("Step 2: Filtering infrastructure features...")
@@ -220,6 +246,94 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
             if progress:
                 progress.close()
             raise QgsProcessingException(f"Error creating building blocks: {str(e)}")
+    
+    def create_study_area_from_usage(self, usage_layer):
+        """Create the study area as union of all nutzungFlurstueck features."""
+        try:
+            # Create temporary layer with all usage features
+            temp_layer = QgsVectorLayer(f"Polygon?crs={usage_layer.crs().authid()}", "temp_usage", "memory")
+            temp_layer.dataProvider().addAttributes([QgsField("usage_id", QVariant.Int)])
+            temp_layer.updateFields()
+            temp_layer.startEditing()
+            
+            # Add all usage features
+            feature_id = 1
+            for feature in usage_layer.getFeatures():
+                geom = feature.geometry()
+                if geom and not geom.isNull():
+                    new_feature = QgsFeature(temp_layer.fields())
+                    new_feature.setGeometry(geom)
+                    new_feature.setAttribute("usage_id", feature_id)
+                    temp_layer.dataProvider().addFeature(new_feature)
+                    feature_id += 1
+            
+            temp_layer.commitChanges()
+            
+            if temp_layer.featureCount() == 0:
+                return None
+            
+            # Use QGIS processing to create union
+            try:
+                result = processing.run(
+                    "native:dissolve",
+                    {
+                        'INPUT': temp_layer,
+                        'FIELD': [],  # Dissolve all features together
+                        'OUTPUT': 'TEMPORARY_OUTPUT'
+                    }
+                )
+                
+                dissolved_layer = result['OUTPUT']
+                
+                # Get the dissolved geometry
+                dissolved_geometries = []
+                for feature in dissolved_layer.getFeatures():
+                    geom = feature.geometry()
+                    if geom and not geom.isNull():
+                        dissolved_geometries.append(geom)
+                
+                if not dissolved_geometries:
+                    return None
+                
+                # Combine all dissolved parts
+                study_area = dissolved_geometries[0]
+                for geom in dissolved_geometries[1:]:
+                    study_area = study_area.combine(geom)
+                
+                print(f"Debug: Created study area from {temp_layer.featureCount()} nutzungFlurstueck features")
+                return study_area
+                
+            except Exception as e:
+                print(f"Debug: QGIS processing failed, falling back to manual union: {e}")
+                return self.create_study_area_from_usage_fallback(temp_layer)
+            
+        except Exception as e:
+            print(f"Debug: Error creating study area from usage layer: {e}")
+            return None
+    
+    def create_study_area_from_usage_fallback(self, temp_layer):
+        """Fallback method for usage-based study area creation."""
+        try:
+            usage_geometries = []
+            
+            for feature in temp_layer.getFeatures():
+                geom = feature.geometry()
+                if geom and not geom.isNull():
+                    usage_geometries.append(geom)
+            
+            if not usage_geometries:
+                return None
+            
+            study_area = usage_geometries[0]
+            for geom in usage_geometries[1:]:
+                study_area = study_area.combine(geom)
+            
+            print(f"Debug: Created study area using fallback method from {len(usage_geometries)} features")
+            return study_area
+            
+        except Exception as e:
+            print(f"Debug: Error in fallback study area creation: {e}")
+            return None
     
     def create_study_area(self, community_layer, gemarkung_layer):
         """Create the study area as union of administrative boundaries using QGIS processing."""

@@ -94,7 +94,7 @@
     <item>
      <widget class="QLabel" name="label">
       <property name="text">
-       <string>Municipal Boundary Layer:</string>
+       <string>Municipal Boundary Layer: (Gemeindegrenzen)</string>
       </property>
       <property name="font">
        <font>
@@ -114,7 +114,7 @@
     <item>
      <widget class="QLabel" name="label_2">
       <property name="text">
-       <string>District Boundary Layer:</string>
+       <string>District Boundary Layer: (Gemarkungsgrenzen)</string>
       </property>
       <property name="font">
        <font>
@@ -134,7 +134,7 @@
     <item>
      <widget class="QLabel" name="label_3">
       <property name="text">
-       <string>Land Use Layer:</string>
+       <string>Land Use Layer: (nutzungFlurstueck)</string>
       </property>
       <property name="font">
        <font>
