@@ -24,7 +24,8 @@
 
 import os
 from qgis.PyQt import uic, QtWidgets
-from qgis.PyQt.QtWidgets import QMessageBox
+from qgis.PyQt.QtWidgets import QMessageBox, QProgressDialog
+from qgis.PyQt.QtCore import Qt
 from qgis.core import (
     QgsProject, QgsVectorLayer, QgsFeature, QgsGeometry,
     QgsField, QgsFields, QgsWkbTypes, QgsProcessingException,
@@ -82,9 +83,17 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
             if not output_name:
                 output_name = "building_blocks"
                 
+            # Create and show progress dialog
+            progress = QProgressDialog("Creating building blocks...", "Cancel", 0, 100, self)
+            progress.setWindowModality(Qt.WindowModal)
+            progress.setWindowTitle("Processing")
+            progress.show()
+            
             result_layer = self.create_building_blocks(
-                community_layer, gemarkung_layer, usage_layer, output_name
+                community_layer, gemarkung_layer, usage_layer, output_name, progress
             )
+            
+            progress.close()
             
             if result_layer and self.addToMapCheckBox.isChecked():
                 QgsProject.instance().addMapLayer(result_layer)
@@ -102,20 +111,67 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
                 f"Failed to create building blocks: {str(e)}"
             )
             
-    def create_building_blocks(self, community_layer, gemarkung_layer, usage_layer, output_name):
-        """Create building blocks by combining the input layers."""
+    def create_building_blocks(self, community_layer, gemarkung_layer, usage_layer, output_name, progress=None):
+        """Create building blocks following the logic from Logik.jpeg."""
         try:
             # Use the CRS from the community layer
             crs = community_layer.crs()
             
-            # Create memory layer for results
+            if progress:
+                progress.setLabelText("Step 1: Filtering usage layer for required classes...")
+                progress.setValue(10)
+                QtWidgets.QApplication.processEvents()
+            
+            # Step 1: Filter usage layer for only required classes (nutzart filtering)
+            filtered_usage_features = []
+            for usage_feature in usage_layer.getFeatures():
+                usage_type = self.get_feature_usage_type(usage_feature)
+                if usage_type is not None:
+                    filtered_usage_features.append(usage_feature)
+            
+            print(f"Debug: Filtered {len(filtered_usage_features)} usage features from {usage_layer.featureCount()} total")
+            
+            if progress:
+                progress.setLabelText("Step 2: Creating community-gemarkung intersections...")
+                progress.setValue(30)
+                QtWidgets.QApplication.processEvents()
+            
+            # Step 2: Create intersections between community and gemarkung layers
+            admin_intersections = []
+            for community_feature in community_layer.getFeatures():
+                if progress and progress.wasCanceled():
+                    return None
+                    
+                community_geom = community_feature.geometry()
+                community_name = self.get_feature_name(community_feature)
+                
+                for gemarkung_feature in gemarkung_layer.getFeatures():
+                    gemarkung_geom = gemarkung_feature.geometry()
+                    
+                    if community_geom.intersects(gemarkung_geom):
+                        intersection_geom = community_geom.intersection(gemarkung_geom)
+                        if not intersection_geom.isNull() and not intersection_geom.isEmpty():
+                            gemarkung_name = self.get_feature_name(gemarkung_feature)
+                            admin_intersections.append({
+                                'geometry': intersection_geom,
+                                'community': community_name,
+                                'gemarkung': gemarkung_name
+                            })
+            
+            print(f"Debug: Created {len(admin_intersections)} admin intersections")
+            
+            if progress:
+                progress.setLabelText("Step 3: Creating building blocks from intersections...")
+                progress.setValue(50)
+                QtWidgets.QApplication.processEvents()
+            
+            # Create result layer
             result_layer = QgsVectorLayer(
                 f"Polygon?crs={crs.authid()}", 
                 output_name, 
                 "memory"
             )
             
-            # Create fields
             fields = QgsFields()
             fields.append(QgsField("block_id", QVariant.Int))
             fields.append(QgsField("community", QVariant.String))
@@ -125,70 +181,73 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
             
             result_layer.dataProvider().addAttributes(fields)
             result_layer.updateFields()
-            
             result_layer.startEditing()
             
+            # Step 3: Intersect filtered usage features with admin intersections
             block_id = 1
+            created_blocks = 0
             
-            # Process each community feature
-            for community_feature in community_layer.getFeatures():
-                community_geom = community_feature.geometry()
-                community_name = self.get_feature_name(community_feature)
+            total_combinations = len(admin_intersections) * len(filtered_usage_features)
+            processed = 0
+            
+            for admin_intersection in admin_intersections:
+                if progress and progress.wasCanceled():
+                    return None
+                    
+                admin_geom = admin_intersection['geometry']
+                community_name = admin_intersection['community']
+                gemarkung_name = admin_intersection['gemarkung']
                 
-                # Find intersecting gemarkung features
-                gemarkung_request = gemarkung_layer.getFeatures()
-                for gemarkung_feature in gemarkung_request:
-                    gemarkung_geom = gemarkung_feature.geometry()
+                for usage_feature in filtered_usage_features:
+                    processed += 1
+                    if progress and processed % 10 == 0:  # Update every 10 features
+                        progress_value = 50 + int((processed / total_combinations) * 40)
+                        progress.setValue(progress_value)
+                        progress.setLabelText(f"Creating building blocks... {processed}/{total_combinations}")
+                        QtWidgets.QApplication.processEvents()
                     
-                    # Check intersection with community
-                    if not community_geom.intersects(gemarkung_geom):
-                        continue
-                        
-                    gemarkung_name = self.get_feature_name(gemarkung_feature)
-                    intersection_geom = community_geom.intersection(gemarkung_geom)
+                    usage_geom = usage_feature.geometry()
+                    usage_type = self.get_feature_usage_type(usage_feature)
                     
-                    # Find usage features within this intersection
-                    usage_request = usage_layer.getFeatures()
-                    for usage_feature in usage_request:
-                        usage_geom = usage_feature.geometry()
+                    if admin_geom.intersects(usage_geom):
+                        block_geom = admin_geom.intersection(usage_geom)
                         
-                        # Check intersection with community-gemarkung area
-                        if not intersection_geom.intersects(usage_geom):
-                            continue
+                        if not block_geom.isNull() and not block_geom.isEmpty():
+                            area = block_geom.area()
                             
-                        usage_type = self.get_feature_usage_type(usage_feature)
-                        
-                        # Skip if usage type is not in our allowed list
-                        if usage_type is None:
-                            continue
-                        
-                        # Create the building block geometry
-                        block_geom = intersection_geom.intersection(usage_geom)
-                        
-                        if block_geom.isNull() or block_geom.isEmpty():
-                            continue
+                            # Create building block feature
+                            new_feature = QgsFeature(result_layer.fields())
+                            new_feature.setGeometry(block_geom)
+                            new_feature.setAttribute("block_id", block_id)
+                            new_feature.setAttribute("community", community_name)
+                            new_feature.setAttribute("gemarkung", gemarkung_name)
+                            new_feature.setAttribute("usage_type", usage_type)
+                            new_feature.setAttribute("area_sqm", area)
                             
-                        # Calculate area
-                        area = block_geom.area()
-                        
-                        # Create new feature
-                        new_feature = QgsFeature(result_layer.fields())
-                        new_feature.setGeometry(block_geom)
-                        new_feature.setAttribute("block_id", block_id)
-                        new_feature.setAttribute("community", community_name)
-                        new_feature.setAttribute("gemarkung", gemarkung_name)
-                        new_feature.setAttribute("usage_type", usage_type)
-                        new_feature.setAttribute("area_sqm", area)
-                        
-                        result_layer.dataProvider().addFeature(new_feature)
-                        block_id += 1
+                            result_layer.dataProvider().addFeature(new_feature)
+                            block_id += 1
+                            created_blocks += 1
+            
+            print(f"Debug: Created {created_blocks} building blocks")
+            
+            if progress:
+                progress.setValue(95)
+                progress.setLabelText("Finalizing building blocks...")
+                QtWidgets.QApplication.processEvents()
                         
             result_layer.commitChanges()
             result_layer.updateExtents()
             
+            if progress:
+                progress.setValue(100)
+                progress.setLabelText("Complete!")
+                QtWidgets.QApplication.processEvents()
+            
             return result_layer
             
         except Exception as e:
+            if progress:
+                progress.close()
             raise QgsProcessingException(f"Error creating building blocks: {str(e)}")
             
     def get_feature_name(self, feature):
@@ -220,15 +279,27 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
         
         usage_fields = ['nutzart', 'Nutzart', 'NUTZART', 'nutzung', 'Nutzung', 'usage', 'type', 'Type', 'art', 'Art']
         
+        # Debug: Print all available fields
+        available_fields = [field.name() for field in feature.fields()]
+        print(f"Debug: Available fields in feature: {available_fields}")
+        
         for field_name in usage_fields:
-            if field_name in [field.name() for field in feature.fields()]:
+            if field_name in available_fields:
                 value = feature.attribute(field_name)
                 if value and str(value).strip():
-                    usage_value = str(value).strip().lower()
-                    # Check if the usage type is in our allowed list
+                    usage_value = str(value).strip()  # Don't convert to lowercase
+                    print(f"Debug: Found usage value in field '{field_name}': '{usage_value}'")
+                    # Check if the usage type is in our allowed list (case-sensitive match)
                     if usage_value in allowed_usage_types:
+                        print(f"Debug: MATCHED allowed type: '{usage_value}'")
                         return str(value)
+                    else:
+                        print(f"Debug: '{usage_value}' NOT in allowed types")
+                        print(f"Debug: Allowed types are: {list(allowed_usage_types)}")
+                else:
+                    print(f"Debug: Field '{field_name}' exists but has no value")
                     
+        print("Debug: No matching usage field found or no matching value")
         return None  # Return None for features that don't match our filter
         
     def on_help_clicked(self):
