@@ -56,6 +56,11 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
         self.gemarkungLayerCombo.setFilters(QgsMapLayerProxyModel.PolygonLayer)
         self.usageLayerCombo.setFilters(QgsMapLayerProxyModel.PolygonLayer)
         
+        # Set placeholder text
+        self.communityLayerCombo.setCurrentText("Select layer")
+        self.gemarkungLayerCombo.setCurrentText("Select layer") 
+        self.usageLayerCombo.setCurrentText("Select layer")
+        
     def accept(self):
         """Process building blocks creation when OK is clicked."""
         try:

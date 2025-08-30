@@ -54,6 +54,9 @@ class RoadDetailsDialog(QtWidgets.QDialog, FORM_CLASS):
         # Set filter to show only polygon layers
         self.usageLayerCombo.setFilters(QgsMapLayerProxyModel.PolygonLayer)
         
+        # Set placeholder text
+        self.usageLayerCombo.setCurrentText("Select layer")
+        
     def accept(self):
         """Process the center line creation when OK is clicked."""
         try:
