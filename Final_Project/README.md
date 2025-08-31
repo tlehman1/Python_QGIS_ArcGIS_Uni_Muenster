@@ -1,183 +1,183 @@
 # Building Block Creator Plugin
 
-## Überblick
+## Overview
 
-Das Building Block Creator Plugin ist ein QGIS-Erweiterung, die ALKIS- und ATKIS-Daten kombiniert, um semi-automatisch Baufelder zu erstellen. Das Plugin analysiert Nutzungsflächendaten und erstellt daraus zusammenhängende Baufelder durch einen komplexen geometrischen Verarbeitungsprozess.
+The Building Block Creator Plugin is a QGIS extension that combines ALKIS and ATKIS data to semi-automatically create building plots. The plugin analyzes land use data and uses a complex geometric processing process to create contiguous building plots.
 
-## Funktionen
+## Features
 
-- **Automatisierte Baublockgenerierung**: Erstellt Baufelder aus Infrastrukturdaten
-- **Filterung nach Nutzungsarten**: Berücksichtigt spezifische Nutzungstypen (Straßenverkehr, Bahnverkehr, Fließgewässer, Wege)
-- **Geometrische Verarbeitung**: 15-stufiger Verarbeitungsprozess mit Delaunay-Triangulation
-- **PDF-Export**: Exportiert das Ergebnis als PDF mit Titel und Statistiken
-- **Fortschrittsanzeige**: Zeigt den Verarbeitungsfortschritt in Echtzeit an
+- **Automated building block generation**: Creates building plots from infrastructure data
+- **Filtering by land use types**: Takes specific land use types into account (road traffic, rail traffic, watercourses, paths)
+- **Geometric processing**: 15-step processing process with Delaunay triangulation
+- **PDF export**: Exports the result as a PDF with title and statistics
+- **Progress bar**: Shows the processing progress in real time
 
 ## Installation
 
-1. Kopieren Sie das Plugin-Verzeichnis in Ihren QGIS-Plugin-Ordner
-2. Starten Sie QGIS neu
-3. Aktivieren Sie das Plugin unter **Plugins → Plugins verwalten und installieren**
+1. Copy the plugin directory to your QGIS plugin folder
+2. Restart QGIS
+3. Activate the plugin under **Plugins → Manage and Install Plugins**
 
-## Verwendung
+## Usage
 
-### Eingangsdaten
+### Input data
 
-Das Plugin benötigt drei Eingabeschichten:
+The plugin requires three input layers:
 
-1. **Municipal Boundary Layer (Gemeindegrenzen)**: Polygonschicht mit Gemeindegrenzen
-2. **District Boundary Layer (Gemarkungsgrenzen)**: Polygonschicht mit Gemarkungsgrenzen  
-3. **Land Use Layer (nutzungFlurstueck)**: Polygonschicht mit Nutzungsflächendaten
+1. **Municipal Boundary Layer**: Polygon layer with municipal boundaries
+2. **District Boundary Layer**: Polygon layer with district boundaries
+3. **Land Use Layer**: Polygon layer with land use data
 
 ### Workflow
 
-1. **Plugin öffnen**: Klicken Sie auf das Building Block Creator Icon oder wählen Sie es aus dem Menü
-2. **Layer auswählen**: Wählen Sie die erforderlichen Eingabeschichten aus den Dropdown-Menüs
-3. **Output-Name festlegen**: Geben Sie einen Namen für die Ergebnis-Schicht ein
-4. **PDF-Export (optional)**: Aktivieren Sie die Checkbox "Export result to PDF" wenn gewünscht
-5. **Verarbeitung starten**: Klicken Sie auf "OK" um den Prozess zu starten
+1. **Open plugin**: Click on the Building Block Creator icon or select it from the menu
+2. **Select layers**: Select the required input layers from the drop-down menus
+3. **Set output name**: Enter a name for the result layer
+4. **PDF export (optional)**: Check the “Export result to PDF” checkbox if desired
+5. **Start processing**: Click “OK” to start the process
 
-### Verarbeitungsschritte
+### Processing steps
 
-Das Plugin führt einen 15-stufigen Verarbeitungsprozess durch:
+The plugin performs a 15-step processing process:
 
-1. **Initialisierung**: Erstellt gefilterte Schicht für Infrastrukturdaten
-2. **Analyse**: Durchsucht nutzungFlurstueck-Features nach relevanten Nutzungsarten
-3. **Geometrie-Verkleinerung**: Verkleinert ursprüngliche Geometrie um 2 Meter
-4. **Stützpunkte-Extraktion**: Extrahiert Vertices aus gepufferten Geometrien
-5. **Pufferung**: Puffert Vertices mit 5 Metern
-6. **Union**: Vereinigt alle Puffer
-7. **Zentroide**: Erstellt Zentroide aus Union-Puffern
-8. **Delaunay-Triangulation**: Erstellt Dreiecke aus Zentroiden
-9. **Linienkonvertierung**: Wandelt Dreieckspolygone in Linien um
-10. **Linien-Explosion**: Zerlegt Linien in einzelne Segmente
-11. **Geometrie-Pufferung**: Puffert ursprüngliche Geometrie mit 10 Metern
-12. **Auflösung**: Löst 10m-Puffer auf
-13. **Linienfilterung**: Filtert Linien innerhalb der Puffergeometrie
-14. **Polygon-Eliminierung**: Entfernt kleine Polygone (< 1000 m²)
-15. **Finalisierung**: Fügt Ergebnis zur Karte hinzu
+1. **Initialization**: Creates filtered layer for infrastructure data
+2. **Analysis**: Searches land use features for relevant land use types
+3. **Geometry reduction**: Reduces original geometry by 2 meters
+4. **Vertex extraction**: Extracts vertices from buffered geometries
+5. **Buffering**: Buffers vertices with 5 meters
+6. **Union**: Unites all buffers
+7. **Centroid**: Creates centroids from union buffers
+8. **Delaunay triangulation**: Creates triangles from centroids
+9. **Line conversion**: Converts triangle polygons into lines
+10. **Line explosion**: Breaks lines down into individual segments
+11. **Geometry buffering**: Buffers original geometry with 10 meters
+12. **Resolution**: Resolves 10m buffer
+13. **Line filtering**: Filters lines within the buffer geometry
+14. **Polygon elimination**: Removes small polygons (< 1000 m²)
+15. **Finalization**: Adds result to map
 
-### Gefilterte Nutzungsarten
+### Filtered land use types
 
-Das Plugin filtert nach folgenden Nutzungsarten aus dem `nutzart`-Feld:
+The plugin filters according to the following land use types from the `nutzart` field:
 
-- **Bahnverkehr**: Bahnlinien und Bahninfrastruktur
-- **Fließgewässer**: Flüsse, Bäche und andere Wasserläufe
-- **Straßenverkehr**: Straßen und Verkehrswege
-- **Weg**: Fußwege und kleinere Pfade
+- **Rail transport**: Railway lines and railway infrastructure
+- **Watercourses**: Rivers, streams, and other watercourses
+- **Road transport**: Roads and traffic routes
+- **Path**: Footpaths and smaller paths
 
-## Ausgabe
+## Output
 
-### Ergebnis-Layer
+### Result layer
 
-Das Plugin erstellt eine neue Polygonschicht mit folgenden Attributen:
+The plugin creates a new polygon layer with the following attributes:
 
-- **Geometrie**: Baufeld-Polygone
-- **Layer-spezifische Attribute**: Abhängig vom Verarbeitungsschritt
+- **Geometry**: Construction site polygons
+- **Layer-specific attributes**: Depends on the processing step
 
-### PDF-Export
+### PDF export
 
-Wenn die PDF-Export-Option aktiviert ist, wird ein PDF erstellt mit:
+If the PDF export option is enabled, a PDF is created with:
 
-- **Titel**: "Building Blocks Export"
-- **Karte**: Visualisierung der Baufelder
-- **Statistiken**: Layer-Name und Anzahl der Features
-- **Layout**: A4-Format mit professionellem Layout
+- **Title**: “Building Blocks Export”
+- **Map**: Visualization of the building sites
+- **Statistics**: Layer name and number of features
+- **Layout**: A4 format with professional layout
 
-## Technische Details
+## Technical details
 
-### Systemanforderungen
+### System requirements
 
 - QGIS 3.x
 - PyQt5
 - QGIS Processing Framework
 
-### Abhängigkeiten
+### Dependencies
 
-- `qgis.core`: Kern-QGIS-Funktionalitäten
-- `qgis.processing`: Verarbeitungsalgorithmen
-- `PyQt5.QtWidgets`: Benutzeroberfläche
-- `PyQt5.QtCore`: Qt-Kernfunktionalitäten
+- `qgis.core`: Core QGIS functionalities
+- `qgis.processing`: Processing algorithms
+- `PyQt5.QtWidgets`: User interface
+- `PyQt5.QtCore`: Qt core functionalities
 
-### Verarbeitungsalgorithmen
+### Processing algorithms
 
-Das Plugin verwendet folgende QGIS-Processing-Algorithmen:
+The plugin uses the following QGIS processing algorithms:
 
-- `native:dissolve`: Geometrie-Auflösung
-- `native:centroids`: Zentroide-Erstellung
-- `qgis:delaunaytriangulation`: Delaunay-Triangulation
-- `native:polygonstolines`: Polygon-zu-Linien-Konvertierung
-- `native:explodelines`: Linien-Explosion
-- `native:buffer`: Pufferung
-- `native:extractbylocation`: Räumliche Filterung
-- `native:polygonize`: Polygonisierung
-- `native:multiparttosingleparts`: Multipart-Aufteilung
-- `qgis:eliminateselectedpolygons`: Polygon-Eliminierung
+- `native:dissolve`: Geometry dissolution
+- `native:centroids`: Centroid creation
+- `qgis:delaunaytriangulation`: Delaunay triangulation
+- `native:polygonstolines`: Polygon-to-line conversion
+- `native:explodelines`: Line explosion
+- `native:buffer`: Buffering
+- `native:extractbylocation`: Spatial filtering
+- `native:polygonize`: Polygonization
+- `native:multiparttosingleparts`: Multipart splitting
+- `qgis:eliminateselectedpolygons`: Polygon elimination
 
-## Fehlerbehebung
+## Troubleshooting
 
-### Häufige Probleme
+### Common problems
 
-1. **"Layer nicht gefunden"**: Stellen Sie sicher, dass alle erforderlichen Layer geladen sind
-2. **"Keine Features gefunden"**: Überprüfen Sie, ob die Nutzungsschicht die erwarteten Nutzungsarten enthält
-3. **"PDF-Export fehlgeschlagen"**: Überprüfen Sie die Schreibberechtigung für das Zielverzeichnis
+1. **“Layer not found”**: Make sure that all required layers are loaded
+2. **“No features found”**: Check whether the usage layer contains the expected usage types
+3. **“PDF export failed”**: Check the write permissions for the target directory
 
-### Debug-Informationen
+### Debug information
 
-Das Plugin gibt Debug-Informationen in der QGIS-Konsole aus:
+The plugin outputs debug information to the QGIS console:
 
-- Feature-Anzahlen für jeden Verarbeitungsschritt
-- Geometrie-Validierungsmeldungen
-- Verarbeitungszeiten
+- Feature counts for each processing step
+- Geometry validation messages
+- Processing times
 
-## Entwicklung
+## Development
 
-### Plugin-Struktur
+### Plugin structure
 
 ```
 building_block_creator/
-├── __init__.py                           # Plugin-Initialisierung
-├── building_block_creator.py            # Haupt-Plugin-Klasse
-├── creator_dialog.py                    # Dialog-Logik
-├── building_block_creator_dialog_base.py # UI-Basis-Klasse
-├── building_block_creator_dialog_base.ui # UI-Definition
-├── building_block_creator_dialog_creator.ui # Creator-Dialog-UI
-├── resources.py                         # Ressourcen
-├── resources.qrc                        # Qt-Ressourcen
-└── README.md                           # Diese Datei
+├── __init__.py                           # Plugin initialization
+├── building_block_creator.py            # Main plugin class
+├── creator_dialog.py                    # Dialog logic
+├── building_block_creator_dialog_base.py # UI base class
+├── building_block_creator_dialog_base.ui # UI definition
+├── building_block_creator_dialog_creator.ui # Creator dialog UI
+├── resources.py                         # Resources
+├── resources.qrc                        # Qt resources
+└── README.md                           # This file
 ```
 
-### Code-Organisation
+### Code Organization
 
-- **UI-Layer**: Dialog-Management und Benutzerinteraktion
-- **Processing-Layer**: Geometrische Verarbeitungslogik
-- **Export-Layer**: PDF-Export-Funktionalität
+- **UI Layer**: Dialog Management and User Interaction
+- **Processing Layer**: Geometric Processing Logic
+- **Export Layer**: PDF Export Functionality
 
-## Autoren
+## Authors
 
-- **T. Lehmann** - Universität Münster (t.lehmann@uni-muenster.de)
-- **T. Brand** - Universität Münster (t.brand@uni-muenster.de)
+- **T. Lehmann** - University of Münster (t.lehmann@uni-muenster.de)
+- **T. Brand** - University of Münster (t.brand@uni-muenster.de)
 
-## Lizenz
+## License
 
-Dieses Programm ist freie Software; Sie können es unter den Bedingungen der GNU General Public License, wie von der Free Software Foundation veröffentlicht, weitergeben und/oder modifizieren; entweder gemäß Version 2 der Lizenz oder (nach Ihrer Option) jeder späteren Version.
+This program is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 2 of the License, or (at your option) any later version.
 
 ## Version
 
 **Version**: 1.0  
-**Erstellt**: 2025-08-21  
-**Letztes Update**: 2025-08-31
+**Created**: 2025-08-21  
+**Last update**: 2025-08-31
 
 ## Support
 
-Bei Fragen oder Problemen wenden Sie sich an:
+If you have any questions or problems, please contact:
 - t.lehmann@uni-muenster.de
 - t.brand@uni-muenster.de
 
 ## Changelog
 
-### Version 1.0 (2025-08-31)
-- Initiale Version
-- 15-stufiger Verarbeitungsprozess implementiert
-- PDF-Export-Funktionalität hinzugefügt
-- Fortschrittsanzeige implementiert
-- Automatische Layer-Filterung nach Nutzungsarten
+### Version 1.0 (August 31, 2025)
+- Initial version
+- 15-step processing workflow implemented
+- PDF export functionality added
+- Progress bar implemented
+- Automatic layer filtering by usage type
