@@ -92,7 +92,6 @@ If the PDF export option is enabled, a PDF is created with:
 
 - **Title**: “Building Blocks Export”
 - **Map**: Visualization of the building sites
-- **Statistics**: Layer name and number of features
 - **Layout**: A4 format with professional layout
 
 ## Technical details
