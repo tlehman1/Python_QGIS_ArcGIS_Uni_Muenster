@@ -162,32 +162,34 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
                 # Check if this feature matches our infrastructure criteria
                 usage_type = self.get_feature_usage_type(feature)
                 if usage_type is not None:  # This feature is infrastructure
-                    # Get original geometry and apply negative 2m buffer
                     original_geom = feature.geometry()
-                    buffered_geom = original_geom.buffer(-2.0, 5)  # -2m buffer with 5 segments per quarter circle
                     
                     # Only add if buffered geometry is valid and not empty
-                    if buffered_geom and not buffered_geom.isEmpty() and not buffered_geom.isNull():
-                        new_feature = QgsFeature(filtered_layer.fields())
-                        new_feature.setGeometry(buffered_geom)
+                    new_feature = QgsFeature(filtered_layer.fields())
+                    new_feature.setGeometry(original_geom)
                         
-                        # Copy all attributes
-                        for field in feature.fields():
-                            field_name = field.name()
-                            new_feature.setAttribute(field_name, feature.attribute(field_name))
-                        
-                        filtered_layer.dataProvider().addFeature(new_feature)
+                    filtered_layer.dataProvider().addFeature(new_feature)
             
             filtered_layer.commitChanges()
             filtered_layer.updateExtents()
             
+            # Buffer the original filtered geometry (after step 1) with negative 2 meters
+            neg_buffered_original_layer = None
+            if original_geom:
+                if progress:
+                    progress.setValue(99)
+                    progress.setLabelText("Shrinking original geometry by 2 meters...")
+                    QtWidgets.QApplication.processEvents()
+                
+                neg_buffered_original_layer = self.buffer_original_geometry(filtered_layer, -2.0, progress)
+
             if progress:
                 progress.setValue(85)
                 progress.setLabelText("Extracting vertices from buffered geometries...")
                 QtWidgets.QApplication.processEvents()
             
             # Extract vertices (Stützpunkte) from the buffered geometries
-            vertices_layer = self.extract_vertices(filtered_layer, progress)
+            vertices_layer = self.extract_vertices(neg_buffered_original_layer, progress)
             
             # Buffer the vertices with 5 meters
             buffered_vertices_layer = None
@@ -251,7 +253,7 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
             
             # Buffer the original filtered geometry (after step 1) with 10 meters
             buffered_original_layer = None
-            if filtered_layer:
+            if original_geom:
                 if progress:
                     progress.setValue(99)
                     progress.setLabelText("Buffering original geometry with 10 meters...")
@@ -297,7 +299,7 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
                     progress.setLabelText("Creating union with Gemarkung boundaries...")
                     QtWidgets.QApplication.processEvents()
                 
-                final_lines_layer = self.intersect_with_boundaries(filtered_lines_layer, gemarkung_lines_layer, progress)
+                final_lines_layer = self.union_with_boundaries(filtered_lines_layer, gemarkung_lines_layer, progress)
             
             # Polygonize the union result to create polygons
             polygons_layer = None
@@ -344,42 +346,10 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
                 progress.setLabelText("Adding layers to map...")
                 QtWidgets.QApplication.processEvents()
             
-            # Add the Gemarkung lines as the first result
-            if gemarkung_lines_layer:
-                QgsProject.instance().addMapLayer(gemarkung_lines_layer)
-            
-            # Add the union of filtered lines with Gemarkung boundaries as second result
-            if final_lines_layer:
-                QgsProject.instance().addMapLayer(final_lines_layer)
-            
-            # Add the polygonized result as third result
-            if polygons_layer:
-                QgsProject.instance().addMapLayer(polygons_layer)
-            
-            # Add the single parts result as fourth result
-            if single_parts_layer:
-                QgsProject.instance().addMapLayer(single_parts_layer)
-            
-            # Add the small polygons result as fifth result
-            if small_polygons_layer:
-                QgsProject.instance().addMapLayer(small_polygons_layer)
-            
             # Add the final building blocks result as sixth result (with small polygons eliminated)
             if final_building_blocks_layer:
                 QgsProject.instance().addMapLayer(final_building_blocks_layer)
             
-            # Add the dissolved union as third result (single merged geometry)
-            dissolved_union_single = None
-            if union_layer:
-                if progress:
-                    progress.setValue(99)
-                    progress.setLabelText("Creating single merged geometry...")
-                    QtWidgets.QApplication.processEvents()
-                
-                dissolved_union_single = self.dissolve_union_buffers(union_layer, progress)
-            
-            if dissolved_union_single:
-                QgsProject.instance().addMapLayer(dissolved_union_single)
             
             if progress:
                 progress.setValue(100)
@@ -1119,7 +1089,7 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
             print(f"Debug: QGIS line filtering failed: {e}")
             return None
     
-    def intersect_with_boundaries(self, lines_layer, boundary_lines_layer, progress=None):
+    def union_with_boundaries(self, lines_layer, boundary_lines_layer, progress=None):
         """Union filtered lines with boundary lines using QGIS processing."""
         try:
             if progress:
@@ -1212,7 +1182,7 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
             from qgis.core import QgsLineSymbol
             symbol = QgsLineSymbol.createSimple({
                 'color': 'darkgreen',
-                'width': '1.8',
+                'width': '1',
                 'line_style': 'solid'
             })
             lines_layer.renderer().setSymbol(symbol)
@@ -2353,9 +2323,9 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
             # Style the final layer with a distinct style
             from qgis.core import QgsFillSymbol
             symbol = QgsFillSymbol.createSimple({
-                'color': '0,255,0,80',  # Green with transparency for final result
-                'color_border': 'darkgreen',
-                'width_border': '2.0',
+                'color': '0,180,216,80',  # Green with transparency for final result
+                'color_border': '#03045e',
+                'width_border': '0.5',
                 'style': 'solid'
             })
             final_layer.renderer().setSymbol(symbol)
