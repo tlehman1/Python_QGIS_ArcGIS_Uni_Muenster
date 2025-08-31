@@ -35,6 +35,7 @@ from qgis.core import (
 from qgis.PyQt.QtCore import QVariant
 import processing
 import math
+import time
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'building_block_creator_dialog_creator.ui'))
@@ -145,6 +146,7 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
                     QtWidgets.QApplication.processEvents()
             
             update_progress("Step 1/15: Initializing filtered layer...", 1)
+            time.sleep(1)  # Make step 1 visible for 1 second
             
             # Create a filtered layer with infrastructure features only
             filtered_layer = QgsVectorLayer(f"Polygon?crs={usage_layer.crs().authid()}", "building_blocks", "memory")
