@@ -2305,7 +2305,7 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
             # Create a properly named memory layer with unique timestamp
             import time
             timestamp = int(time.time())
-            unique_layer_name = f"building_blocks_final_{timestamp}"
+            unique_layer_name = self.outputNameEdit.text() or "building_blocks"
             final_layer = QgsVectorLayer(f"Polygon?crs={single_parts_layer.crs().authid()}", unique_layer_name, "memory")
             
             # Copy fields from the processing result
