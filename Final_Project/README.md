@@ -1,8 +1,16 @@
-# Building Block Creator Plugin
+# <img src="./Literatur/icon.png" alt="icon" width="32px"/> Building Block Creator Plugin
 
 ## Overview
 
-The Building Block Creator Plugin is a QGIS extension that combines ALKIS and ATKIS data to semi-automatically create building plots. The plugin analyzes land use data and uses a complex geometric processing process to create contiguous building plots.
+The Building Block Creator Plugin is a QGIS extension that combines ALKIS data to semi-automatically create building plots. The plugin analyzes land use data and uses a complex geometric processing process to create contiguous building plots.  
+Building blocks are an essential tool for modern municipal and regional statistics. They allow researchers to aggregate and store precise and critical data while complying with the GDPR while still keeping a small scale representation of space for statistical analyses.
+
+## Background
+
+This plugin is based on the [paper](https://github.com/tlehman1/Python_QGIS_ArcGIS_Uni_Muenster/blob/final_project/Final_Project/Literatur/2019-04-11-AbleitungVonBaubloecken_Kelm.pdf) "Semiautomatisches Verfahren zur Ableitung von Baublöcken" by Kelm et. al..
+It describes the theoretical framework and can be implemented in many different ways.  
+Since we wanted to focus on generating usable results while only relying on open data, the process is quite complex.
+Additional example data for this process can be found [here](https://opendata.kreis-guetersloh.de/dataset/?tags=Planen+-+Bauen+-+Kataster).
 
 ## Features
 
@@ -27,6 +35,8 @@ The plugin requires three input layers:
 1. **Municipal Boundary Layer**: Polygon layer with municipal boundaries
 2. **District Boundary Layer**: Polygon layer with district boundaries
 3. **Land Use Layer**: Polygon layer with land use data
+
+*Example Data can be found in this repository under `./data`. All datasets should only contain one municipality for better results.*
 
 ### Workflow
 
@@ -55,6 +65,8 @@ The plugin performs a 15-step processing process:
 13. **Line filtering**: Filters lines within the buffer geometry
 14. **Polygon elimination**: Removes small polygons (< 1000 m²)
 15. **Finalization**: Adds result to map
+
+![image of the process workflow](./Literatur/BuildingBlocksProcess.png)
 
 ### Filtered land use types
 

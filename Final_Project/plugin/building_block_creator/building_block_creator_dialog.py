@@ -59,7 +59,7 @@ class BuildingBlockCreatorDialog(QtWidgets.QDialog, FORM_CLASS):
         self.button_box.setObjectName("button_box")
 
         self.verticalLayoutWidget = QtWidgets.QWidget(BuildingBlockCreatorDialogBase)
-        self.verticalLayoutWidget.setGeometry(QtCore.QRect(30, 120, 361, 171))
+        self.verticalLayoutWidget.setGeometry(QtCore.QRect(30, 170, 361, 100))
         self.verticalLayoutWidget.setObjectName("verticalLayoutWidget")
         
         self.verticalLayout = QtWidgets.QVBoxLayout(self.verticalLayoutWidget)
@@ -80,16 +80,9 @@ class BuildingBlockCreatorDialog(QtWidgets.QDialog, FORM_CLASS):
        
         self.verticalLayout.addWidget(self.pushButton)
         
-        self.pushButton_2 = QtWidgets.QPushButton(self.verticalLayoutWidget)
-        
         sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Preferred)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
-        sizePolicy.setHeightForWidth(self.pushButton_2.sizePolicy().hasHeightForWidth())
-        
-        self.pushButton_2.setSizePolicy(sizePolicy)
-        self.pushButton_2.setObjectName("pushButton_2")
-        self.verticalLayout.addWidget(self.pushButton_2)
         
         self.label = QtWidgets.QLabel(BuildingBlockCreatorDialogBase)
         self.label.setGeometry(QtCore.QRect(30, 20, 241, 31))
@@ -101,7 +94,7 @@ class BuildingBlockCreatorDialog(QtWidgets.QDialog, FORM_CLASS):
         self.label.setObjectName("label")
         
         self.label_2 = QtWidgets.QLabel(BuildingBlockCreatorDialogBase)
-        self.label_2.setGeometry(QtCore.QRect(40, 50, 341, 51))
+        self.label_2.setGeometry(QtCore.QRect(40, 50, 341, 121))
         self.label_2.setAlignment(QtCore.Qt.AlignLeading|QtCore.Qt.AlignLeft|QtCore.Qt.AlignTop)
         self.label_2.setWordWrap(True)
         self.label_2.setObjectName("label_2")
@@ -114,7 +107,6 @@ class BuildingBlockCreatorDialog(QtWidgets.QDialog, FORM_CLASS):
         
         # Connect main buttons
         self.pushButton.clicked.connect(self.on_building_blocks_clicked)
-        self.pushButton_2.clicked.connect(self.on_road_details_clicked)
 
         self.retranslateUi(BuildingBlockCreatorDialogBase)
         self.button_box.accepted.connect(BuildingBlockCreatorDialogBase.accept) # type: ignore
@@ -124,16 +116,15 @@ class BuildingBlockCreatorDialog(QtWidgets.QDialog, FORM_CLASS):
     def retranslateUi(self, BuildingBlockCreatorDialogBase):
         _translate = QtCore.QCoreApplication.translate
         BuildingBlockCreatorDialogBase.setWindowTitle(_translate("BuildingBlockCreatorDialogBase", "Building Block Creator"))
-        self.pushButton.setText(_translate("BuildingBlockCreatorDialogBase", "Building Blocks"))
-        self.pushButton_2.setText(_translate("BuildingBlockCreatorDialogBase", "Road Details"))
+        self.pushButton.setText(_translate("BuildingBlockCreatorDialogBase", "Generate Building Blocks"))
         self.label.setText(_translate("BuildingBlockCreatorDialogBase", "Building Block Creator"))
-        self.label_2.setText(_translate("BuildingBlockCreatorDialogBase", "This plugin combines ALKIS and ATKIS data to create building blocks semi-automatically. The \"Road Details\" tool can be called separately."))
+        self.label_2.setText(_translate("BuildingBlockCreatorDialogBase", "This plugin combines ALKIS data to create building blocks semi-automatically. Building blocks are a core instrument in regional and municipal statistics for aggregating, storing and analyzing spatial data. The manual creation of those units is very time comsuming. With a automated first step, followed by manual inspection, a lot of resources can be safed."))
         self.pushButton_3.setToolTip(_translate("BuildingBlockCreatorDialogBase", "See the theoretical background"))
         self.pushButton_3.setText(_translate("BuildingBlockCreatorDialogBase", "About"))
 
     def on_about_clicked(self):
         """Handle About button click."""
-        url = "https://github.com/tlehman1/Python_QGIS_ArcGIS_Uni_Muenster/blob/main/Exercise_13/2019-04-11-AbleitungVonBaubloecken_Kelm.pdf"
+        url = "https://github.com/tlehman1/Python_QGIS_ArcGIS_Uni_Muenster/tree/final_project/Final_Project"
         webbrowser.open(url)
     
     def on_building_blocks_clicked(self):
