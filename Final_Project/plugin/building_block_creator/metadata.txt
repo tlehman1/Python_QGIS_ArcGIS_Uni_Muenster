@@ -1,0 +1,47 @@
+# This file contains metadata for your plugin.
+
+# This file should be included when you package your plugin.# Mandatory items:
+
+[general]
+name=Building Block Creator
+qgisMinimumVersion=3.0
+description=This plugin combines ALKIS and ATKIS data to create building blocks semi-automatically.
+version=0.1
+author=Lehmann, T., Brand, T.
+email=t.brand@uni-muenster.de, t.lehmann@uni-muenster.de
+
+about=This plugin combines ALKIS and ATKIS data to create building blocks semi-automatically.
+
+tracker=https://github.com/tlehman1/Python_QGIS_ArcGIS_Uni_Muenster/issues
+repository=https://github.com/tlehman1/Python_QGIS_ArcGIS_Uni_Muenster
+# End of mandatory metadata
+
+# Recommended items:
+
+hasProcessingProvider=no
+# Uncomment the following line and add your changelog:
+# changelog=
+
+# Tags are comma separated with spaces allowed
+tags=python
+
+homepage=https://github.com/tlehman1/Python_QGIS_ArcGIS_Uni_Muenster
+category=Plugins
+icon=icon.png
+# experimental flag
+experimental=True
+
+# deprecated flag (applies to the whole plugin, not just a single version)
+deprecated=False
+
+# Since QGIS 3.8, a comma separated list of plugins to be installed
+# (or upgraded) can be specified.
+# Check the documentation for more information.
+# plugin_dependencies=
+
+Category of the plugin: Raster, Vector, Database or Web
+# category=
+
+# If the plugin can run on QGIS Server.
+server=False
+

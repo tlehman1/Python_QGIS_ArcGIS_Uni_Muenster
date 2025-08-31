@@ -1,0 +1,173 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>BuildingBlocksHelpDialog</class>
+ <widget class="QDialog" name="BuildingBlocksHelpDialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>600</width>
+    <height>500</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Building Blocks Creation - Help</string>
+  </property>
+  <widget class="QDialogButtonBox" name="buttonBox">
+   <property name="geometry">
+    <rect>
+     <x>440</x>
+     <y>450</y>
+     <width>141</width>
+     <height>32</height>
+    </rect>
+   </property>
+   <property name="orientation">
+    <enum>Qt::Horizontal</enum>
+   </property>
+   <property name="standardButtons">
+    <set>QDialogButtonBox::Close</set>
+   </property>
+  </widget>
+  <widget class="QScrollArea" name="scrollArea">
+   <property name="geometry">
+    <rect>
+     <x>20</x>
+     <y>20</y>
+     <width>561</width>
+     <height>421</height>
+    </rect>
+   </property>
+   <property name="widgetResizable">
+    <bool>true</bool>
+   </property>
+   <widget class="QWidget" name="scrollAreaWidgetContents">
+    <property name="geometry">
+     <rect>
+      <x>0</x>
+      <y>0</y>
+      <width>559</width>
+      <height>419</height>
+     </rect>
+    </property>
+    <widget class="QLabel" name="helpLabel">
+     <property name="geometry">
+      <rect>
+       <x>10</x>
+       <y>10</y>
+       <width>539</width>
+       <height>399</height>
+      </rect>
+     </property>
+     <property name="font">
+      <font>
+       <pointsize>10</pointsize>
+      </font>
+     </property>
+     <property name="text">
+      <string>&lt;html&gt;&lt;head&gt;&lt;/head&gt;&lt;body&gt;
+&lt;h2&gt;Building Blocks Creation - Help&lt;/h2&gt;
+
+&lt;h3&gt;Overview&lt;/h3&gt;
+&lt;p&gt;The Building Blocks function combines ALKIS and ATKIS data for semi-automatic creation of building blocks through intersection of various geodata layers.&lt;/p&gt;
+
+&lt;h3&gt;Required Inputs&lt;/h3&gt;
+&lt;p&gt;&lt;strong&gt;Municipal Boundary:&lt;/strong&gt;&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Polygon layer with the outer municipal boundary&lt;/li&gt;
+&lt;li&gt;Defines the spatial framework for building block creation&lt;/li&gt;
+&lt;li&gt;Should encompass the entire area to be processed&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;&lt;strong&gt;District Boundaries:&lt;/strong&gt;&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Polygon layer with district/cadastral boundaries&lt;/li&gt;
+&lt;li&gt;Subdivides the municipality into administrative units&lt;/li&gt;
+&lt;li&gt;Important for correct assignment of building blocks&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;&lt;strong&gt;Land Use Types:&lt;/strong&gt;&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Polygon layer with various land use types (ALKIS/ATKIS)&lt;/li&gt;
+&lt;li&gt;Contains information about residential areas, commercial areas, roads, etc.&lt;/li&gt;
+&lt;li&gt;Basis for thematic classification of building blocks&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h3&gt;Processing Workflow&lt;/h3&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;Intersection:&lt;/strong&gt; The tool analyzes spatial overlaps between the three input layers&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Geometry Creation:&lt;/strong&gt; A new building block is created for each intersection area&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Attribution:&lt;/strong&gt; Each building block automatically receives attributes from all participating layers&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Area Calculation:&lt;/strong&gt; The area of each building block is automatically calculated&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;h3&gt;Output Attributes&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;block_id:&lt;/strong&gt; Unique identification number&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;community:&lt;/strong&gt; Name of the municipality&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;gemarkung:&lt;/strong&gt; Name of the district/cadastral area&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;usage_type:&lt;/strong&gt; Type of land use&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;area_sqm:&lt;/strong&gt; Area of the building block in square meters&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h3&gt;Tips for Best Results&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;All input layers should be in the same coordinate system&lt;/li&gt;
+&lt;li&gt;Check data quality before processing&lt;/li&gt;
+&lt;li&gt;Large datasets may require considerable processing time&lt;/li&gt;
+&lt;li&gt;The result is automatically added to the map when the option is enabled&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h3&gt;Data Sources&lt;/h3&gt;
+&lt;p&gt;Suitable data can be obtained from &lt;a href="https://opendata.kreis-guetersloh.de"&gt;opendata.kreis-guetersloh.de&lt;/a&gt;.&lt;/p&gt;
+&lt;/body&gt;&lt;/html&gt;</string>
+     </property>
+     <property name="alignment">
+      <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignTop</set>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+     <property name="openExternalLinks">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </widget>
+  </widget>
+ </widget>
+ <resources/>
+ <connections>
+  <connection>
+   <sender>buttonBox</sender>
+   <signal>accepted()</signal>
+   <receiver>BuildingBlocksHelpDialog</receiver>
+   <slot>accept()</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>248</x>
+     <y>254</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>157</x>
+     <y>274</y>
+    </hint>
+   </hints>
+  </connection>
+  <connection>
+   <sender>buttonBox</sender>
+   <signal>rejected()</signal>
+   <receiver>BuildingBlocksHelpDialog</receiver>
+   <slot>reject()</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>316</x>
+     <y>260</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>286</x>
+     <y>274</y>
+    </hint>
+   </hints>
+  </connection>
+ </connections>
+</ui>
