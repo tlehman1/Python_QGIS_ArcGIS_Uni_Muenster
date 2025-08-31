@@ -131,6 +131,21 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
     def filter_nutzung_flurstueck(self, usage_layer, gemarkung_layer, progress=None):
         """Filter nutzungFlurstueck layer to show only infrastructure features."""
         try:
+            # Define processing steps with proper progress values
+            total_steps = 15
+            current_step = 0
+            
+            def update_progress(step_name, step_increment=1):
+                nonlocal current_step
+                current_step += step_increment
+                if progress:
+                    progress_value = int((current_step / total_steps) * 100)
+                    progress.setValue(progress_value)
+                    progress.setLabelText(step_name)
+                    QtWidgets.QApplication.processEvents()
+            
+            update_progress("Step 1/15: Initializing filtered layer...", 1)
+            
             # Create a filtered layer with infrastructure features only
             filtered_layer = QgsVectorLayer(f"Polygon?crs={usage_layer.crs().authid()}", "building_blocks", "memory")
             
@@ -139,14 +154,12 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
             filtered_layer.updateFields()
             filtered_layer.startEditing()
             
+            update_progress("Step 2/15: Analyzing nutzungFlurstueck features...", 1)
+            
             # Get total number of features for progress tracking
             total_features = usage_layer.featureCount()
             processed = 0
-            
-            if progress:
-                progress.setValue(10)
-                progress.setLabelText("Analyzing nutzungFlurstueck features...")
-                QtWidgets.QApplication.processEvents()
+            has_infrastructure = False
             
             # Filter features based on usage type
             for feature in usage_layer.getFeatures():
@@ -154,14 +167,14 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
                 
                 # Update progress every 100 features
                 if progress and processed % 100 == 0:
-                    progress_value = 10 + int((processed / total_features) * 80)
-                    progress.setValue(progress_value)
-                    progress.setLabelText(f"Processing feature {processed}/{total_features}")
+                    feature_progress = int((processed / total_features) * 100)
+                    progress.setLabelText(f"Step 2/15: Processing feature {processed}/{total_features} ({feature_progress}%)")
                     QtWidgets.QApplication.processEvents()
                 
                 # Check if this feature matches our infrastructure criteria
                 usage_type = self.get_feature_usage_type(feature)
                 if usage_type is not None:  # This feature is infrastructure
+                    has_infrastructure = True
                     original_geom = feature.geometry()
                     
                     # Only add if buffered geometry is valid and not empty
@@ -175,18 +188,12 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
             
             # Buffer the original filtered geometry (after step 1) with negative 2 meters
             neg_buffered_original_layer = None
-            if original_geom:
-                if progress:
-                    progress.setValue(99)
-                    progress.setLabelText("Shrinking original geometry by 2 meters...")
-                    QtWidgets.QApplication.processEvents()
+            if has_infrastructure and filtered_layer.featureCount() > 0:
+                update_progress("Step 3/15: Shrinking original geometry by 2 meters...", 1)
                 
                 neg_buffered_original_layer = self.buffer_original_geometry(filtered_layer, -2.0, progress)
 
-            if progress:
-                progress.setValue(85)
-                progress.setLabelText("Extracting vertices from buffered geometries...")
-                QtWidgets.QApplication.processEvents()
+            update_progress("Step 4/15: Extracting vertices from buffered geometries...", 1)
             
             # Extract vertices (Stützpunkte) from the buffered geometries
             vertices_layer = self.extract_vertices(neg_buffered_original_layer, progress)
@@ -194,157 +201,104 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
             # Buffer the vertices with 5 meters
             buffered_vertices_layer = None
             if vertices_layer:
-                if progress:
-                    progress.setValue(90)
-                    progress.setLabelText("Buffering vertices with 5 meters...")
-                    QtWidgets.QApplication.processEvents()
+                update_progress("Step 5/15: Buffering vertices with 5 meters...", 1)
                 
                 buffered_vertices_layer = self.buffer_vertices(vertices_layer, 5.0, progress)
             
             # Union all buffered vertices into a single layer
             union_layer = None
             if buffered_vertices_layer:
-                if progress:
-                    progress.setValue(92)
-                    progress.setLabelText("Creating union of all buffers...")
-                    QtWidgets.QApplication.processEvents()
+                update_progress("Step 6/15: Creating union of all buffers...", 1)
                 
                 union_layer = self.union_buffers(buffered_vertices_layer, progress)
             
             # Create centroids from the union buffers
             centroids_layer = None
             if union_layer:
-                if progress:
-                    progress.setValue(94)
-                    progress.setLabelText("Creating centroids from union buffers...")
-                    QtWidgets.QApplication.processEvents()
+                update_progress("Step 7/15: Creating centroids from union buffers...", 1)
                 
                 centroids_layer = self.create_centroids_from_union(union_layer, progress)
             
             # Create Delaunay triangulation from centroids
             triangulation_layer = None
             if centroids_layer:
-                if progress:
-                    progress.setValue(96)
-                    progress.setLabelText("Creating Delaunay triangulation...")
-                    QtWidgets.QApplication.processEvents()
+                update_progress("Step 8/15: Creating Delaunay triangulation...", 1)
                 
                 triangulation_layer = self.create_delaunay_triangulation(centroids_layer, progress)
             
             # Convert triangle polygons to lines
             lines_layer = None
             if triangulation_layer:
-                if progress:
-                    progress.setValue(97)
-                    progress.setLabelText("Converting triangles to lines...")
-                    QtWidgets.QApplication.processEvents()
+                update_progress("Step 9/15: Converting triangles to lines...", 1)
                 
                 lines_layer = self.convert_polygons_to_lines(triangulation_layer, progress)
             
             # Explode the lines to individual segments
             exploded_lines_layer = None
             if lines_layer:
-                if progress:
-                    progress.setValue(98)
-                    progress.setLabelText("Exploding lines to segments...")
-                    QtWidgets.QApplication.processEvents()
+                update_progress("Step 10/15: Exploding lines to segments...", 1)
                 
                 exploded_lines_layer = self.explode_lines(lines_layer, progress)
             
             # Buffer the original filtered geometry (after step 1) with 10 meters
             buffered_original_layer = None
-            if original_geom:
-                if progress:
-                    progress.setValue(99)
-                    progress.setLabelText("Buffering original geometry with 10 meters...")
-                    QtWidgets.QApplication.processEvents()
+            if has_infrastructure and filtered_layer.featureCount() > 0:
+                update_progress("Step 11/15: Buffering original geometry with 10 meters...", 1)
                 
                 buffered_original_layer = self.buffer_original_geometry(filtered_layer, 10.0, progress)
             
             # Dissolve the 10m buffer to create unified geometry
             dissolved_buffer_layer = None
             if buffered_original_layer:
-                if progress:
-                    progress.setValue(99)
-                    progress.setLabelText("Dissolving 10m buffer...")
-                    QtWidgets.QApplication.processEvents()
+                update_progress("Step 12/15: Dissolving 10m buffer...", 1)
                 
                 dissolved_buffer_layer = self.dissolve_buffer(buffered_original_layer, progress)
             
             # Filter lines that are inside the dissolved buffer geometry
             filtered_lines_layer = None
             if exploded_lines_layer and dissolved_buffer_layer:
-                if progress:
-                    progress.setValue(99)
-                    progress.setLabelText("Filtering lines inside buffer geometry...")
-                    QtWidgets.QApplication.processEvents()
+                update_progress("Step 13/15: Filtering lines inside buffer geometry...", 1)
                 
                 filtered_lines_layer = self.filter_lines_inside_buffer(exploded_lines_layer, dissolved_buffer_layer, progress)
             
             # Convert Gemarkung boundaries to lines for intersection
             gemarkung_lines_layer = None
             if gemarkung_layer:
-                if progress:
-                    progress.setValue(99)
-                    progress.setLabelText("Converting Gemarkung boundaries to lines...")
-                    QtWidgets.QApplication.processEvents()
-                
+                # Convert Gemarkung boundaries to lines
                 gemarkung_lines_layer = self.convert_gemarkung_to_lines(gemarkung_layer, progress)
             
             # Union filtered lines with Gemarkung boundaries
             final_lines_layer = None
             if filtered_lines_layer and gemarkung_lines_layer:
-                if progress:
-                    progress.setValue(99)
-                    progress.setLabelText("Creating union with Gemarkung boundaries...")
-                    QtWidgets.QApplication.processEvents()
-                
+                # Create union with Gemarkung boundaries
                 final_lines_layer = self.union_with_boundaries(filtered_lines_layer, gemarkung_lines_layer, progress)
             
             # Polygonize the union result to create polygons
             polygons_layer = None
             if final_lines_layer:
-                if progress:
-                    progress.setValue(99)
-                    progress.setLabelText("Creating polygons from lines...")
-                    QtWidgets.QApplication.processEvents()
-                
+                # Create polygons from lines
                 polygons_layer = self.polygonize_lines(final_lines_layer, progress)
             
             # Convert multipart polygons to single parts
             single_parts_layer = None
             if polygons_layer:
-                if progress:
-                    progress.setValue(99)
-                    progress.setLabelText("Converting multipart to single parts...")
-                    QtWidgets.QApplication.processEvents()
-                
+                # Convert multipart to single parts
                 single_parts_layer = self.multipart_to_single_parts(polygons_layer, progress)
             
             # Select small polygons (< 1000 m²)
             small_polygons_layer = None
             if single_parts_layer:
-                if progress:
-                    progress.setValue(99)
-                    progress.setLabelText("Selecting small polygons (< 1000 m²)...")
-                    QtWidgets.QApplication.processEvents()
-                
+                # Select small polygons
                 small_polygons_layer = self.select_small_polygons(single_parts_layer, progress)
             
             # Eliminate selected small polygons (merge with neighboring polygons)
             final_building_blocks_layer = None
             if single_parts_layer and small_polygons_layer:
-                if progress:
-                    progress.setValue(99)
-                    progress.setLabelText("Eliminating small polygons...")
-                    QtWidgets.QApplication.processEvents()
+                update_progress("Step 14/15: Eliminating small polygons...", 1)
                 
                 final_building_blocks_layer = self.eliminate_small_polygons(single_parts_layer, small_polygons_layer, progress)
             
-            if progress:
-                progress.setValue(99)
-                progress.setLabelText("Adding layers to map...")
-                QtWidgets.QApplication.processEvents()
+            update_progress("Step 15/15: Adding layers to map...", 1)
             
             # Add the final building blocks result as sixth result (with small polygons eliminated)
             if final_building_blocks_layer:
@@ -353,7 +307,7 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
             
             if progress:
                 progress.setValue(100)
-                progress.setLabelText("Complete!")
+                progress.setLabelText("Processing complete!")
                 QtWidgets.QApplication.processEvents()
             
             print(f"Debug: Processing complete - final layer added to map")
@@ -478,9 +432,7 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
                 processed += 1
                 
                 if progress and processed % 50 == 0:  # Update every 50 vertices
-                    progress_value = 90 + int((processed / total_vertices) * 5)  # 90-95%
-                    progress.setValue(progress_value)
-                    progress.setLabelText(f"Buffering vertex {processed}/{total_vertices}")
+                    progress.setLabelText(f"Step 5/15: Buffering vertex {processed}/{total_vertices}")
                     QtWidgets.QApplication.processEvents()
                 
                 vertex_geom = vertex_feature.geometry()
@@ -524,10 +476,7 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
         try:
             # Use QGIS processing to create union/dissolve
             try:
-                if progress:
-                    progress.setValue(92)
-                    progress.setLabelText("Dissolving overlapping buffers...")
-                    QtWidgets.QApplication.processEvents()
+                # Dissolving overlapping buffers (handled by main function)
                 
                 result = processing.run(
                     "native:dissolve",
@@ -589,10 +538,7 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
                 symbol = QgsFillSymbol.createSimple({'color': '255,165,0,120', 'color_border': 'orange', 'width_border': '1.0'})
                 union_layer.renderer().setSymbol(symbol)
                 
-                if progress:
-                    progress.setValue(94)
-                    progress.setLabelText("Union completed")
-                    QtWidgets.QApplication.processEvents()
+                # Union completed (handled by main function)
                 
                 print(f"Debug: Created union layer with {union_layer.featureCount()} features, total area: {total_area:.2f}")
                 
@@ -619,16 +565,13 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
             if not all_geometries:
                 return None
             
-            if progress:
-                progress.setValue(93)
-                progress.setLabelText("Manual union of buffers...")
-                QtWidgets.QApplication.processEvents()
+            # Manual union of buffers (handled by main function)
             
             # Start with the first geometry and union with all others
             union_geom = all_geometries[0]
             for i, geom in enumerate(all_geometries[1:], 1):
                 if progress and i % 10 == 0:
-                    progress.setLabelText(f"Unioning geometry {i}/{len(all_geometries)}")
+                    progress.setLabelText(f"Step 6/15: Unioning geometry {i}/{len(all_geometries)}")
                     QtWidgets.QApplication.processEvents()
                 
                 union_geom = union_geom.combine(geom)
@@ -671,10 +614,7 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
     def dissolve_union_buffers(self, union_layer, progress=None):
         """Dissolve union buffers to merge overlapping areas using QGIS processing."""
         try:
-            if progress:
-                progress.setValue(93)
-                progress.setLabelText("Dissolving union buffers...")
-                QtWidgets.QApplication.processEvents()
+            # Dissolving union buffers (handled by main function)
             
             # Use QGIS processing to dissolve the union buffers
             result = processing.run(
@@ -723,10 +663,7 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
     def create_centroids_from_union(self, union_layer, progress=None):
         """Create centroids from union buffer polygons using direct QGIS processing."""
         try:
-            if progress:
-                progress.setValue(94)
-                progress.setLabelText("Creating centroids using QGIS processing...")
-                QtWidgets.QApplication.processEvents()
+            # Creating centroids using QGIS processing (handled by main function)
             
             # Use QGIS processing to create centroids directly from the memory layer
             result = processing.run(
@@ -776,10 +713,7 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
     def create_delaunay_triangulation(self, centroids_layer, progress=None):
         """Create Delaunay triangulation from centroid points using QGIS processing."""
         try:
-            if progress:
-                progress.setValue(96)
-                progress.setLabelText("Creating Delaunay triangulation...")
-                QtWidgets.QApplication.processEvents()
+            # Creating Delaunay triangulation (handled by main function)
             
             # Use QGIS processing to create Delaunay triangulation
             result = processing.run(
@@ -828,10 +762,7 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
     def convert_polygons_to_lines(self, polygon_layer, progress=None):
         """Convert triangle polygons to lines using QGIS processing."""
         try:
-            if progress:
-                progress.setValue(97)
-                progress.setLabelText("Converting polygons to lines...")
-                QtWidgets.QApplication.processEvents()
+            # Converting polygons to lines (handled by main function)
             
             # Use QGIS processing to convert polygons to lines
             result = processing.run(
@@ -879,10 +810,7 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
     def explode_lines(self, lines_layer, progress=None):
         """Explode multipart lines to single part lines using QGIS processing."""
         try:
-            if progress:
-                progress.setValue(98)
-                progress.setLabelText("Exploding lines to segments...")
-                QtWidgets.QApplication.processEvents()
+            # Exploding lines to segments (handled by main function)
             
             # Use QGIS processing to explode lines
             result = processing.run(
@@ -930,10 +858,7 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
     def buffer_original_geometry(self, filtered_layer, buffer_distance, progress=None):
         """Buffer the original filtered geometry with specified distance using QGIS processing."""
         try:
-            if progress:
-                progress.setValue(99)
-                progress.setLabelText(f"Buffering original geometry with {buffer_distance}m...")
-                QtWidgets.QApplication.processEvents()
+            # Buffering original geometry (handled by main function)
             
             # Use QGIS processing to buffer the filtered geometry
             result = processing.run(
@@ -987,10 +912,7 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
     def dissolve_buffer(self, buffered_layer, progress=None):
         """Dissolve the buffered geometry to create unified areas using QGIS processing."""
         try:
-            if progress:
-                progress.setValue(99)
-                progress.setLabelText("Dissolving buffer geometry...")
-                QtWidgets.QApplication.processEvents()
+            # Dissolving buffer geometry (handled by main function)
             
             # Use QGIS processing to dissolve the buffered geometry
             result = processing.run(
@@ -1039,10 +961,7 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
     def filter_lines_inside_buffer(self, lines_layer, buffer_layer, progress=None):
         """Filter lines to keep only those that are inside the buffer geometry using QGIS processing."""
         try:
-            if progress:
-                progress.setValue(99)
-                progress.setLabelText("Filtering lines inside buffer...")
-                QtWidgets.QApplication.processEvents()
+            # Filtering lines inside buffer (handled by main function)
             
             # Use QGIS processing to extract lines that are within the buffer
             result = processing.run(
@@ -1092,10 +1011,7 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
     def union_with_boundaries(self, lines_layer, boundary_lines_layer, progress=None):
         """Union filtered lines with boundary lines using QGIS processing."""
         try:
-            if progress:
-                progress.setValue(99)
-                progress.setLabelText("Creating union with boundaries...")
-                QtWidgets.QApplication.processEvents()
+            # Creating union with boundaries (handled by main function)
             
             # Use QGIS processing to union lines with boundaries
             result = processing.run(
@@ -1147,10 +1063,7 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
     def convert_gemarkung_to_lines(self, gemarkung_layer, progress=None):
         """Convert Gemarkungsgrenzen_KreisGT polygons to lines using QGIS processing."""
         try:
-            if progress:
-                progress.setValue(99)
-                progress.setLabelText("Converting Gemarkungsgrenzen_KreisGT to lines...")
-                QtWidgets.QApplication.processEvents()
+            # Converting Gemarkungsgrenzen_KreisGT to lines (handled by main function)
             
             # Use QGIS processing to convert polygons to lines
             result = processing.run(
@@ -1198,10 +1111,7 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
     def create_centroids(self, union_layer, progress=None):
         """Create centroids from union buffer polygons using QGIS processing."""
         try:
-            if progress:
-                progress.setValue(94)
-                progress.setLabelText("Creating centroids using QGIS processing...")
-                QtWidgets.QApplication.processEvents()
+            # Creating centroids using QGIS processing (handled by main function)
             
             # Use QGIS processing to create centroids with filter
             result = processing.run(
@@ -1277,8 +1187,7 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
                 
                 if progress and total_features > 1:
                     progress_value = 94 + int((processed / total_features) * 1)  # 94-95%
-                    progress.setValue(progress_value)
-                    progress.setLabelText(f"Creating centroid {processed}/{total_features}")
+                    progress.setLabelText(f"Step 7/15: Creating centroid {processed}/{total_features}")
                     QtWidgets.QApplication.processEvents()
                 
                 geom = feature.geometry()
@@ -2101,10 +2010,7 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
     def polygonize_lines(self, lines_layer, progress=None):
         """Convert lines to polygons using QGIS polygonize processing."""
         try:
-            if progress:
-                progress.setValue(99)
-                progress.setLabelText("Polygonizing lines...")
-                QtWidgets.QApplication.processEvents()
+            # Polygonizing lines (handled by main function)
             
             # Use QGIS processing to polygonize lines
             result = processing.run(
@@ -2157,10 +2063,7 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
     def multipart_to_single_parts(self, polygons_layer, progress=None):
         """Convert multipart polygons to single parts using QGIS processing."""
         try:
-            if progress:
-                progress.setValue(99)
-                progress.setLabelText("Converting multipart to single parts...")
-                QtWidgets.QApplication.processEvents()
+            # Converting multipart to single parts (handled by main function)
             
             # Use QGIS processing to convert multipart to single parts
             result = processing.run(
@@ -2212,10 +2115,7 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
     def select_small_polygons(self, single_parts_layer, progress=None):
         """Select and extract small polygons (< 1000 m²) using QGIS processing."""
         try:
-            if progress:
-                progress.setValue(99)
-                progress.setLabelText("Selecting small polygons...")
-                QtWidgets.QApplication.processEvents()
+            # Selecting small polygons (handled by main function)
             
             # Use QGIS processing to select features by expression
             result = processing.run(
@@ -2268,10 +2168,7 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
     def eliminate_small_polygons(self, single_parts_layer, small_polygons_layer, progress=None):
         """Eliminate small polygons by merging them with neighboring larger polygons using QGIS processing."""
         try:
-            if progress:
-                progress.setValue(99)
-                progress.setLabelText("Eliminating small polygons...")
-                QtWidgets.QApplication.processEvents()
+            # Eliminating small polygons (handled by main function)
             
             # First, we need to create a layer with the small polygons selected
             # Create a temporary layer based on single_parts_layer
