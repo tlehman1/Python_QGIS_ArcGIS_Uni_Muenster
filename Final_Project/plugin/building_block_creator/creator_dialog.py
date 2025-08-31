@@ -302,9 +302,13 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
             
             update_progress("Step 15/15: Adding layers to map...", 1)
             
-            # Add the final building blocks result as sixth result (with small polygons eliminated)
+            # Always add the final building blocks result to map
             if final_building_blocks_layer:
                 QgsProject.instance().addMapLayer(final_building_blocks_layer)
+                
+                # Export to PDF if checkbox is checked
+                if self.exportToPdfCheckBox.isChecked():
+                    self.export_building_blocks_to_pdf(final_building_blocks_layer)
             
             
             if progress:
@@ -2236,6 +2240,87 @@ class CreatorDialog(QtWidgets.QDialog, FORM_CLASS):
         except Exception as e:
             print(f"Debug: QGIS eliminate selected polygons failed: {e}")
             return None
+    
+    def export_building_blocks_to_pdf(self, building_blocks_layer):
+        """Export building blocks layer to PDF."""
+        try:
+            from qgis.core import QgsPrintLayout, QgsLayoutItemMap, QgsLayoutItemLabel, QgsLayoutSize, QgsUnitTypes, QgsLayoutExporter, QgsLayoutPoint
+            from qgis.PyQt.QtCore import QSizeF
+            from qgis.PyQt.QtWidgets import QFileDialog
+            from qgis.PyQt.QtGui import QFont
+            import os
+            
+            # Ask user for PDF file location
+            pdf_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Export Building Blocks to PDF",
+                os.path.expanduser("~/building_blocks.pdf"),
+                "PDF Files (*.pdf)"
+            )
+            
+            if not pdf_path:
+                return  # User cancelled
+            
+            # Create a new print layout
+            project = QgsProject.instance()
+            layout = QgsPrintLayout(project)
+            layout.initializeDefaults()
+            
+            # Add map item
+            map_item = QgsLayoutItemMap(layout)
+            map_item.attemptResize(QgsLayoutSize(180, 200, QgsUnitTypes.LayoutMillimeters))
+            map_item.attemptMove(QgsLayoutPoint(15, 40, QgsUnitTypes.LayoutMillimeters))
+            
+            # Set the map extent to the building blocks layer
+            if building_blocks_layer.featureCount() > 0:
+                map_item.setExtent(building_blocks_layer.extent())
+            
+            layout.addLayoutItem(map_item)
+            
+            # Add title
+            title_item = QgsLayoutItemLabel(layout)
+            title_item.setText("Building Blocks Export")
+            title_item.attemptResize(QgsLayoutSize(180, 20, QgsUnitTypes.LayoutMillimeters))
+            title_item.attemptMove(QgsLayoutPoint(15, 15, QgsUnitTypes.LayoutMillimeters))
+            
+            # Set title font
+            font = QFont()
+            font.setPointSize(16)
+            font.setBold(True)
+            title_item.setFont(font)
+            
+            layout.addLayoutItem(title_item)
+            
+            # Add layer info
+            info_text = f"Layer: {building_blocks_layer.name()}\nAnzahl Features: {building_blocks_layer.featureCount()}"
+            info_item = QgsLayoutItemLabel(layout)
+            info_item.setText(info_text)
+            info_item.attemptResize(QgsLayoutSize(180, 30, QgsUnitTypes.LayoutMillimeters))
+            info_item.attemptMove(QgsLayoutPoint(15, 250, QgsUnitTypes.LayoutMillimeters))
+            layout.addLayoutItem(info_item)
+            
+            # Export to PDF
+            exporter = QgsLayoutExporter(layout)
+            export_settings = QgsLayoutExporter.PdfExportSettings()
+            
+            result = exporter.exportToPdf(pdf_path, export_settings)
+            
+            if result == QgsLayoutExporter.Success:
+                QMessageBox.information(
+                    self, "Success", 
+                    f"Building blocks exported to PDF:\n{pdf_path}"
+                )
+            else:
+                QMessageBox.warning(
+                    self, "Warning", 
+                    f"PDF export failed with result: {result}"
+                )
+            
+        except Exception as e:
+            QMessageBox.critical(
+                self, "Error", 
+                f"Failed to export PDF: {str(e)}"
+            )
 
     def on_help_clicked(self):
         """Handle Help button click."""

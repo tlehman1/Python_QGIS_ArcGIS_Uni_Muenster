@@ -175,9 +175,9 @@
      </widget>
     </item>
     <item>
-     <widget class="QCheckBox" name="addToMapCheckBox">
+     <widget class="QCheckBox" name="exportToPdfCheckBox">
       <property name="text">
-       <string>Add result to map canvas</string>
+       <string>Export result to PDF</string>
       </property>
       <property name="checked">
        <bool>true</bool>
